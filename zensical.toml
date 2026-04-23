@@ -1,5 +1,11 @@
+[project]
 site_name = "terraform-github-runner"
+docs_dir = "docs"
+site_dir = "site"
+extra_css = ["stylesheets/extra.css"]
 
-[build]
-source = "docs"
-output = "site"
+[project.theme]
+variant = "modern"
+
+[project.theme.palette]
+scheme = "slate"
