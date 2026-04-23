@@ -1,0 +1,8 @@
+framework:
+  - terraform
+quiet: true
+compact: true
+skip-path:
+  - .terraform
+  - terraform.tfstate
+  - terraform.tfstate.backup

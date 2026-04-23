@@ -1,0 +1,163 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - tar
+  - unzip
+  - docker.io
+
+write_files:
+  - path: /usr/local/bin/github-runner-bootstrap
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      runner_home=/opt/actions-runner
+      runner_url='${runner_url}'
+      runner_name='${runner_name}'
+      runner_group='${runner_group}'
+      runner_labels='${runner_labels_csv}'
+      registration_tokens_json='${registration_tokens_json}'
+      runner_version='${actions_runner_version}'
+      runner_arch='${actions_runner_arch}'
+      registration_mode='${registration_mode}'
+      registration_token='${registration_token}'
+      vault_addr='${vault_addr}'
+      vault_namespace='${vault_namespace}'
+      vault_bootstrap_token='${vault_bootstrap_token}'
+      vault_secret_mount='${vault_runner_secret_mount}'
+      vault_secret_name='${vault_runner_secret_name}'
+      vault_secret_key='${vault_runner_secret_key}'
+      registration_scope='${registration_scope}'
+      github_owner='${github_owner}'
+      github_repository='${github_repository}'
+      github_repositories_csv='${github_repositories_csv}'
+      cache_volume_name='${cache_volume_name}'
+
+      install_vault_if_needed() {
+        if command -v vault >/dev/null 2>&1; then
+          return
+        fi
+
+        local vault_version='${vault_version}'
+        local zip="vault_$${vault_version}_linux_arm64.zip"
+        curl -fsSLo "/tmp/$${zip}" "https://releases.hashicorp.com/vault/$${vault_version}/$${zip}"
+        unzip -o "/tmp/$${zip}" -d /usr/local/bin
+        chmod 0755 /usr/local/bin/vault
+      }
+
+      ensure_cache_mount() {
+        local mount_path="/mnt/HC_Volume_$${cache_volume_name}"
+        mkdir -p /var/cache/github-actions
+        if [[ -d "$${mount_path}" ]]; then
+          mkdir -p "$${mount_path}/github-actions"
+          mountpoint -q /var/cache/github-actions || mount --bind "$${mount_path}/github-actions" /var/cache/github-actions
+        fi
+      }
+
+      mint_registration_token_from_api() {
+        local api_token="$1"
+        local target_repo="$2"
+        local token_url=""
+
+        if [[ "$registration_scope" == "organization" ]]; then
+          token_url="https://api.github.com/orgs/$${github_owner}/actions/runners/registration-token"
+        else
+          if [[ -z "$${target_repo}" ]]; then
+            echo "target repository is required for repository registration scope" >&2
+            exit 1
+          fi
+          token_url="https://api.github.com/repos/$${github_owner}/$${target_repo}/actions/runners/registration-token"
+        fi
+
+        curl -fsSL -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer $${api_token}" \
+          "$${token_url}" \
+          | jq -r '.token'
+      }
+
+      get_api_token_from_vault() {
+        install_vault_if_needed
+        export VAULT_ADDR="$vault_addr"
+        export VAULT_NAMESPACE="$vault_namespace"
+        export VAULT_TOKEN="$vault_bootstrap_token"
+
+        vault kv get -mount="$vault_secret_mount" -field="$vault_secret_key" "$vault_secret_name"
+      }
+
+      useradd --create-home --home-dir "$runner_home" --shell /bin/bash actions || true
+      usermod -aG docker actions || true
+
+      ensure_cache_mount
+
+      readarray -t target_repositories < <(tr ',' '\n' <<<"$github_repositories_csv" | sed '/^$/d')
+
+      if [[ "$registration_scope" == "organization" ]]; then
+        target_repositories=("$github_owner")
+      elif [[ $${#target_repositories[@]} -eq 0 ]]; then
+        echo "no target repositories configured for repository scope" >&2
+        exit 1
+      fi
+
+      if [[ "$registration_mode" == "vault-token" ]]; then
+        api_token=$(get_api_token_from_vault)
+      fi
+
+      for target in "$${target_repositories[@]}"; do
+        repo_slug="$target"
+        scope_url="$runner_url"
+        token="$registration_token"
+        runner_suffix="$target"
+
+        if [[ "$registration_scope" == "repository" ]]; then
+          scope_url="https://github.com/$${github_owner}/$${repo_slug}"
+          if [[ "$registration_mode" == "github-provider" ]]; then
+            token=$(jq -r --arg repo "$repo_slug" '.[$repo] // empty' <<<"$registration_tokens_json")
+          else
+            token=$(mint_registration_token_from_api "$api_token" "$repo_slug")
+          fi
+        elif [[ "$registration_mode" == "vault-token" ]]; then
+          token=$(mint_registration_token_from_api "$api_token" "")
+          runner_suffix="org"
+        fi
+
+        if [[ -z "$token" ]]; then
+          echo "runner registration token is empty for target=$target" >&2
+          exit 1
+        fi
+
+        safe_suffix=$(sed 's/[^a-zA-Z0-9-]/-/g' <<<"$runner_suffix")
+        runner_home_target="$runner_home-$safe_suffix"
+        mkdir -p "$runner_home_target"
+        cd "$runner_home_target"
+
+        curl -fsSLo actions-runner.tar.gz "https://github.com/actions/runner/releases/download/v$${runner_version}/actions-runner-linux-$${runner_arch}-$${runner_version}.tar.gz"
+        tar xzf actions-runner.tar.gz
+        rm -f actions-runner.tar.gz
+
+        chown -R actions:actions "$runner_home_target"
+
+        sudo -u actions ./config.sh \
+          --url "$scope_url" \
+          --token "$token" \
+          --name "$runner_name-$safe_suffix" \
+          --runnergroup "$runner_group" \
+          --labels "$runner_labels" \
+          --work /var/cache/github-actions/work-$safe_suffix \
+          --unattended \
+          --replace
+
+        ./svc.sh install actions
+        ./svc.sh start
+      done
+
+runcmd:
+  - [systemctl, enable, --now, docker]
+  - [/usr/local/bin/github-runner-bootstrap]

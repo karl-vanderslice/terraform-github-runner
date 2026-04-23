@@ -1,0 +1,36 @@
+runner_enabled      = false
+registration_mode   = "github-provider"
+registration_scope  = "repository"
+github_owner        = "your-github-owner"
+github_repository   = "agent-hub"
+github_repositories = [
+	"nix-config",
+	"retro-collection-tool",
+] # Additional repositories that should receive runner registrations on this host.
+github_runner_group = "Default"
+
+# Hetzner-only baseline for this repository.
+
+# Pulled from Bitwarden and typically injected as TF_VAR_hcloud_token
+# hcloud_token = "<sensitive>"
+
+hcloud_location      = "nbg1"
+hcloud_server_type   = "cax21"       # ARM 4 vCPU / 8 GB
+hcloud_image         = "ubuntu-24.04"
+hcloud_volume_size_gb = 100
+
+# Optional SSH access for maintenance.
+# admin_cidrs = ["203.0.113.10/32"]
+# ssh_authorized_keys = ["ssh-ed25519 AAAA..."]
+
+# Vault mode (avoid storing long-lived GitHub token in Terraform state)
+# registration_mode         = "vault-token"
+# vault_addr                = "https://your-vault.example.com:8200"
+# vault_namespace           = "admin"
+# vault_bootstrap_token     = "hvs.xxxxx"  # short TTL token preferred
+# vault_runner_secret_mount = "mcp-kv"
+# vault_runner_secret_name  = "github/runner-bootstrap"
+# vault_runner_secret_key   = "GITHUB_TOKEN"
+
+# Optional policy bootstrap
+# enable_vault_bootstrap_policy = true

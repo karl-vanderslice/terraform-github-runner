@@ -1,0 +1,84 @@
+---
+- name: Build GitHub runner base image
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    actions_runner_version: "2.329.0"
+    actions_runner_arch: "arm64"
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - git
+          - jq
+          - tar
+          - unzip
+        state: present
+        update_cache: true
+
+    - name: Create runner user
+      ansible.builtin.user:
+        name: actions
+        shell: /bin/bash
+        create_home: true
+
+    - name: Create runner directory
+      ansible.builtin.file:
+        path: /opt/actions-runner
+        state: directory
+        owner: actions
+        group: actions
+        mode: "0755"
+
+    - name: Download actions runner tarball
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{
+          actions_runner_version }}/actions-runner-linux-{{ actions_runner_arch
+          }}-{{ actions_runner_version }}.tar.gz"
+        dest: /tmp/actions-runner.tar.gz
+        mode: "0644"
+
+    - name: Unpack actions runner
+      ansible.builtin.unarchive:
+        src: /tmp/actions-runner.tar.gz
+        dest: /opt/actions-runner
+        remote_src: true
+        owner: actions
+        group: actions
+
+    - name: Install first-boot registration helper
+      ansible.builtin.copy:
+        dest: /usr/local/bin/github-runner-image-entrypoint
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          echo "Runner image is prepared. Register at runtime via cloud-init or Vault flow."
+
+    - name: Install systemd unit placeholder
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/github-runner-image.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=GitHub Runner Image Placeholder
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/github-runner-image-entrypoint
+          RemainAfterExit=true
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable placeholder service
+      ansible.builtin.systemd:
+        name: github-runner-image.service
+        enabled: true

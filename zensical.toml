@@ -1,0 +1,5 @@
+site_name = "terraform-github-runner"
+
+[build]
+source = "docs"
+output = "site"

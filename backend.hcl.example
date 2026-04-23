@@ -1,0 +1,5 @@
+organization = "your-hcp-terraform-org"
+
+workspaces {
+  name = "terraform-github-runner"
+}

@@ -1,0 +1,6 @@
+---
+ignores:
+  - ".terraform/**"
+  - "site/**"
+config:
+  line-length: false
