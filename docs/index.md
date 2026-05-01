@@ -2,6 +2,15 @@
 
 This repository provisions an opt-in self-hosted GitHub Actions runner on Hetzner Cloud ARM.
 
+## Current Status
+
+As of the CI/CD consolidation to `terraform-cloudflare-docs-sites`, the self-hosted runner is **disabled by default** and not required for standard workflows. All documentation publishing and validation runs on GitHub-hosted `ubuntu-latest` runners via the centralized `deploy-hub.yml` workflow.
+
+**Re-enable this runner only if:**
+- Testing ARM-specific builds or compatibility
+- Running canary deployments on Hetzner infrastructure
+- You explicitly set `CI_CANARY_HETZNER = '1'` in a workflow to route jobs to the self-hosted runner
+
 ## Deployment Pattern
 
 - Keep `runner_enabled = false` until `just lint`, `just test`, and `just plan` are clean.
