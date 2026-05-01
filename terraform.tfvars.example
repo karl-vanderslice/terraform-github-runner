@@ -1,4 +1,4 @@
-runner_enabled      = false
+runner_enabled      = false  # Disabled by default; enable only if self-hosted runner is needed for CI
 registration_mode   = "github-provider"
 registration_scope  = "repository"
 github_owner        = "your-github-owner"
