@@ -32,23 +32,30 @@ just init
 just plan
 ```
 
-Set core values in `terraform.tfvars`:
+Set core values in `terraform.tfvars` for the nix-config runner + Attic path:
 
 ```hcl
 runner_enabled       = true
 registration_scope   = "repository"
 registration_mode    = "github-provider"
 github_owner         = "your-org-or-user"
-github_repository    = "agent-hub"
-github_repositories  = ["nix-config", "retro-collection-tool"]
+github_repository    = "nix-config"
+github_repositories  = []
+runner_labels        = ["nix-config"]
 
 hcloud_location      = "nbg1"
 hcloud_server_type   = "cax21"
-hcloud_image         = "ubuntu-24.04"
-runner_image_family  = "ubuntu"
+hcloud_image         = "nixos-runner-hetzner-image"
+runner_image_family  = "nixos"
 hcloud_volume_size_gb = 100
-workspace_volume_size_gb = 0
+workspace_volume_size_gb = 200
 workspace_mount_path     = "/srv/workspaces"
+
+attic_enabled            = true
+attic_domain             = "attic.vslice.net"
+attic_endpoint_scheme    = "https"
+attic_port               = 443
+attic_cache_name         = "github-actions"
 ```
 
 Apply:

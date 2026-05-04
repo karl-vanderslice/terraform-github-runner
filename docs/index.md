@@ -4,17 +4,19 @@ This repository provisions an opt-in self-hosted GitHub Actions runner on Hetzne
 
 ## Current Status
 
-As of the CI/CD consolidation to `terraform-cloudflare-docs-sites`, the self-hosted runner is **disabled by default** and not required for standard workflows. All documentation publishing and validation runs on GitHub-hosted `ubuntu-latest` runners via the centralized `deploy-hub.yml` workflow.
+The active target is a repository-scoped runner for `karl-vanderslice/nix-config`
+using a NixOS host image with Attic enabled at `attic.vslice.net`.
 
-**Re-enable this runner only if:**
+This deployment is intended for private Nix CI workloads that need:
 
-- Testing ARM-specific builds or compatibility
-- Running canary deployments on Hetzner infrastructure
-- You explicitly set `CI_CANARY_HETZNER = '1'` in a workflow to route jobs to the self-hosted runner
+- deterministic ARM64 execution on Hetzner
+- authenticated access to the private Attic cache
+- CI read-write cache token usage without exposing that token to developer
+  machines
 
 ## Deployment Pattern
 
-- Keep `runner_enabled = false` until `just lint`, `just test`, and `just plan` are clean.
+- Keep `runner_enabled = true` for the nix-config runner deployment.
 - Start with `registration_mode = "github-provider"` for first deployment.
 - Move to `registration_mode = "vault-token"` when Vault-backed bootstrap is ready.
 - Use `runner_image_family = "nixos"` only when `hcloud_image` points at a
@@ -23,11 +25,11 @@ As of the CI/CD consolidation to `terraform-cloudflare-docs-sites`, the self-hos
 ## Hetzner Baseline
 
 - Server type: `cax21`
-- Image: `ubuntu-24.04`
+- Image: NixOS custom image or snapshot (`hcloud_image`)
 - Region default: `nbg1`
 - Persistent volume: default `100` GB, mounted for runner cache/work path
-- Optional second volume: disabled by default, mounted at `/srv/workspaces`
-  for checked-out repositories, future Attic data, and other durable CI state
+- Workspace volume: enabled and mounted at `/srv/workspaces` for Attic state
+  (`/srv/workspaces/attic`) and durable CI data
 
 ## NixOS Attic Path
 
@@ -66,10 +68,12 @@ Default labels include:
 
 Additional labels can be appended with `runner_labels`.
 
+The current deployment appends the repository-specific label `nix-config`.
+
 ## CI Routing Example
 
 ```yaml
-runs-on: ${{ vars.CI_CANARY_HETZNER == '1' && fromJSON('["self-hosted","Linux","ARM64","hetzner","build"]') || 'ubuntu-latest' }}
+runs-on: [self-hosted, Linux, ARM64, hetzner, build, cache, nix-config]
 ```
 
 ## Attic rollout

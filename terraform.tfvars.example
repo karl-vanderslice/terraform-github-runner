@@ -1,13 +1,12 @@
-runner_enabled      = false  # Disabled by default; enable only if self-hosted runner is needed for CI
+runner_enabled      = true
 registration_mode   = "github-provider"
 registration_scope  = "repository"
 github_owner        = "your-github-owner"
-github_repository   = "agent-hub"
-github_repositories = [
-	"nix-config",
-	"retro-collection-tool",
-] # Additional repositories that should receive runner registrations on this host.
+github_repository   = "nix-config"
+github_repositories = []
 github_runner_group = "Default"
+runner_name         = "agent-hub-hetzner-arm"
+runner_labels       = ["nix-config"]
 
 # Hetzner-only baseline for this repository.
 
@@ -16,15 +15,15 @@ github_runner_group = "Default"
 
 hcloud_location      = "nbg1"
 hcloud_server_type   = "cax21"       # ARM 4 vCPU / 8 GB
-hcloud_image         = "ubuntu-24.04"
-runner_image_family  = "ubuntu"
+hcloud_image         = "nixos-runner-hetzner-image"  # custom image or snapshot name/ID
+runner_image_family  = "nixos"
 hcloud_volume_size_gb = 100
-workspace_volume_size_gb = 0          # Set > 0 to attach a second volume for workspaces and future Attic data
+workspace_volume_size_gb = 200
 workspace_mount_path     = "/srv/workspaces"
-attic_enabled            = false
+attic_enabled            = true
 attic_domain             = "attic.vslice.net"
-attic_endpoint_scheme    = "http"    # Switch to https once a reverse proxy/TLS terminator fronts the service
-attic_port               = 8080
+attic_endpoint_scheme    = "https"
+attic_port               = 443
 attic_cache_name         = "github-actions"
 attic_cache_public       = false
 attic_pull_token_validity = "1y"
@@ -36,7 +35,7 @@ attic_ci_token_validity  = "1y"
 
 # Vault mode (avoid storing long-lived GitHub token in Terraform state)
 # registration_mode         = "vault-token"
-# vault_addr                = "https://your-vault.example.com:8200"
+# vault_addr                = "https://vault.vslice.net:8200"
 # vault_namespace           = "admin"
 # vault_bootstrap_token     = "hvs.xxxxx"  # short TTL token preferred
 # vault_runner_secret_mount = "mcp-kv"
