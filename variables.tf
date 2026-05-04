@@ -66,7 +66,7 @@ variable "github_runner_group" {
 }
 
 variable "runner_name" {
-  description = "Runner name override. Leave null to derive from repository name."
+  description = "Runner name override. Leave null to use a persistent random pet-name such as github-runner-quiet-otter."
   type        = string
   default     = null
 }

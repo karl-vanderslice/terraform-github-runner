@@ -76,17 +76,19 @@ just apply
 ## Configuration Model
 
 1. `runner_enabled` is a safety switch. Keep it `false` until plan output is reviewed.
-2. `registration_scope` controls org-level vs repo-level registration.
-3. `registration_mode` controls how registration tokens are sourced:
+2. `runner_name` is optional. When unset, Terraform uses a persistent
+   `random_pet` name with `github-runner-` prefix so hostnames stay generic.
+3. `registration_scope` controls org-level vs repo-level registration.
+4. `registration_mode` controls how registration tokens are sourced:
    - `github-provider`: Terraform fetches short-lived token(s) at apply.
    - `vault-token`: cloud-init reads a GitHub API token from Vault, then mints short-lived runner registration tokens on boot.
-4. `runner_image_family` selects the bootstrap path:
+5. `runner_image_family` selects the bootstrap path:
    - `ubuntu`: use Hetzner stock images and cloud-init package installation.
    - `nixos`: point `hcloud_image` at a custom NixOS image or snapshot built from this repo and let the image provide `atticd`, `atticadm`, `vault`, and Docker.
-5. `attic_enabled` turns on Attic bootstrap. It requires `runner_image_family = "nixos"`, `workspace_volume_size_gb > 0`, and Vault settings so the host can read the signing key and publish both the shared pull token and the CI read-write token.
-6. `cloudflare_attic_dns_enabled` lets Terraform publish the `attic_domain` A record in Cloudflare using the runner IPv4 as origin.
-7. `attic_ingress_cidrs` defaults to Cloudflare anycast ranges so the Hetzner firewall only accepts Attic traffic from Cloudflare when proxying is enabled.
-8. `crowdsec_enabled` starts CrowdSec and its firewall bouncer as Docker containers at bootstrap time.
+6. `attic_enabled` turns on Attic bootstrap. It requires `runner_image_family = "nixos"`, `workspace_volume_size_gb > 0`, and Vault settings so the host can read the signing key and publish both the shared pull token and the CI read-write token.
+7. `cloudflare_attic_dns_enabled` lets Terraform publish the `attic_domain` A record in Cloudflare using the runner IPv4 as origin.
+8. `attic_ingress_cidrs` defaults to Cloudflare anycast ranges so the Hetzner firewall only accepts Attic traffic from Cloudflare when proxying is enabled.
+9. `crowdsec_enabled` starts CrowdSec and its firewall bouncer as Docker containers at bootstrap time.
 
 ## Operational Guidance
 
