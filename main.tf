@@ -16,6 +16,10 @@ locals {
   } : {}
 }
 
+provider "cloudflare" {
+  api_token = coalesce(var.cloudflare_api_token, "")
+}
+
 data "github_actions_organization_registration_token" "organization" {
   count = var.runner_enabled && var.registration_mode == "github-provider" && var.registration_scope == "organization" ? 1 : 0
 }
@@ -56,7 +60,7 @@ resource "hcloud_firewall" "runner" {
       direction  = "in"
       protocol   = "tcp"
       port       = tostring(rule.value)
-      source_ips = ["0.0.0.0/0", "::/0"]
+      source_ips = var.attic_ingress_cidrs
     }
   }
 
@@ -157,6 +161,9 @@ resource "hcloud_server" "runner" {
     attic_vault_secret_mount  = var.attic_vault_secret_mount
     attic_vault_secret_name   = var.attic_vault_secret_name
     attic_vault_secret_key    = var.attic_vault_secret_key
+    crowdsec_enabled          = var.crowdsec_enabled
+    crowdsec_lapi_port        = var.crowdsec_lapi_port
+    crowdsec_firewall_bouncer_enabled = var.crowdsec_firewall_bouncer_enabled
   })
 
   lifecycle {
@@ -218,6 +225,17 @@ resource "hcloud_volume_attachment" "workspace" {
   server_id = hcloud_server.runner[0].id
   volume_id = hcloud_volume.workspace[0].id
   automount = true
+}
+
+resource "cloudflare_dns_record" "attic" {
+  count = var.attic_enabled && var.cloudflare_attic_dns_enabled ? 1 : 0
+
+  zone_id = var.cloudflare_zone_id
+  name    = var.attic_domain
+  type    = "A"
+  ttl     = var.cloudflare_attic_ttl
+  proxied = var.cloudflare_attic_proxied
+  content = hcloud_server.runner[0].ipv4_address
 }
 
 resource "vault_policy" "runner_bootstrap" {

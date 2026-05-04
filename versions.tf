@@ -7,6 +7,11 @@ terraform {
       version = "~> 6.11"
     }
 
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.9"
+    }
+
     hcloud = {
       source  = "hetznercloud/hcloud"
       version = "~> 1.47"

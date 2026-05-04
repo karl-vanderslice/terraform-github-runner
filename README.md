@@ -17,8 +17,10 @@ Terraform for a Hetzner-hosted self-hosted GitHub Actions runner, currently scop
 - optional `hcloud_volume` for workspaces, Attic data, and other durable CI state
 - `hcloud_volume_attachment` for the cache mount
 - `hcloud_firewall` with optional SSH ingress and unrestricted egress
+- optional `cloudflare_dns_record` for `attic_domain` origin routing
 - optional `vault_policy` for runner bootstrap token read access
 - optional Attic bootstrap with local storage on the workspace volume and Vault-backed token publication
+- optional containerized CrowdSec agent + firewall bouncer bootstrap
 
 ## Quick Start
 
@@ -56,6 +58,13 @@ attic_domain             = "attic.vslice.net"
 attic_endpoint_scheme    = "https"
 attic_port               = 443
 attic_cache_name         = "github-actions"
+
+cloudflare_attic_dns_enabled = true
+cloudflare_attic_proxied     = true
+cloudflare_attic_ttl         = 1
+
+crowdsec_enabled                 = true
+crowdsec_firewall_bouncer_enabled = true
 ```
 
 Apply:
@@ -75,6 +84,9 @@ just apply
    - `ubuntu`: use Hetzner stock images and cloud-init package installation.
    - `nixos`: point `hcloud_image` at a custom NixOS image or snapshot built from this repo and let the image provide `atticd`, `atticadm`, `vault`, and Docker.
 5. `attic_enabled` turns on Attic bootstrap. It requires `runner_image_family = "nixos"`, `workspace_volume_size_gb > 0`, and Vault settings so the host can read the signing key and publish both the shared pull token and the CI read-write token.
+6. `cloudflare_attic_dns_enabled` lets Terraform publish the `attic_domain` A record in Cloudflare using the runner IPv4 as origin.
+7. `attic_ingress_cidrs` defaults to Cloudflare anycast ranges so the Hetzner firewall only accepts Attic traffic from Cloudflare when proxying is enabled.
+8. `crowdsec_enabled` starts CrowdSec and its firewall bouncer as Docker containers at bootstrap time.
 
 ## Operational Guidance
 

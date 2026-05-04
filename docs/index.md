@@ -13,6 +13,8 @@ This deployment is intended for private Nix CI workloads that need:
 - authenticated access to the private Attic cache
 - CI read-write cache token usage without exposing that token to developer
   machines
+- Cloudflare-proxied DNS and origin shielding for the cache endpoint
+- host-level intrusion signal and blocking with containerized CrowdSec
 
 ## Deployment Pattern
 
@@ -56,6 +58,10 @@ Operator runbook: see `docs/guides/enable-attic-with-nixos-image.md`.
 - Leave `admin_cidrs = []` unless SSH is required.
 - If enabling SSH CIDRs, provide `ssh_authorized_keys`.
 - Use short-lived Vault bootstrap tokens for cloud-init token minting.
+- Keep `attic_ingress_cidrs` aligned with Cloudflare ranges when
+  `cloudflare_attic_proxied = true`.
+- Keep `crowdsec_enabled = true` and `crowdsec_firewall_bouncer_enabled = true`
+  for containerized host hardening.
 
 ## Runner Labels
 

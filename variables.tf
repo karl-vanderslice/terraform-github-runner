@@ -95,6 +95,52 @@ variable "hcloud_token" {
   }
 }
 
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token used to manage attic DNS records."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = !(var.attic_enabled && var.cloudflare_attic_dns_enabled && (var.cloudflare_api_token == null || length(trimspace(var.cloudflare_api_token)) == 0))
+    error_message = "cloudflare_api_token must be set when attic_enabled and cloudflare_attic_dns_enabled are true."
+  }
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare zone ID that owns attic_domain."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = !(var.attic_enabled && var.cloudflare_attic_dns_enabled && (var.cloudflare_zone_id == null || length(trimspace(var.cloudflare_zone_id)) == 0))
+    error_message = "cloudflare_zone_id must be set when attic_enabled and cloudflare_attic_dns_enabled are true."
+  }
+}
+
+variable "cloudflare_attic_dns_enabled" {
+  description = "Whether Terraform should manage an attic_domain A record in Cloudflare."
+  type        = bool
+  default     = true
+}
+
+variable "cloudflare_attic_proxied" {
+  description = "Whether the attic_domain DNS record is proxied through Cloudflare."
+  type        = bool
+  default     = true
+}
+
+variable "cloudflare_attic_ttl" {
+  description = "TTL for the Cloudflare attic_domain DNS record. Use 1 for automatic TTL."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.cloudflare_attic_ttl == 1 || (var.cloudflare_attic_ttl >= 60 && var.cloudflare_attic_ttl <= 86400)
+    error_message = "cloudflare_attic_ttl must be 1 (automatic) or between 60 and 86400 seconds."
+  }
+}
+
 variable "hcloud_location" {
   description = "Hetzner location for the runner server."
   type        = string
@@ -191,6 +237,40 @@ variable "attic_port" {
   }
 }
 
+variable "attic_ingress_cidrs" {
+  description = "CIDR blocks allowed to reach the Attic port. Defaults to Cloudflare anycast ranges."
+  type        = list(string)
+  default = [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32",
+  ]
+
+  validation {
+    condition     = !var.attic_enabled || length(var.attic_ingress_cidrs) > 0
+    error_message = "attic_ingress_cidrs must contain at least one CIDR when attic_enabled is true."
+  }
+}
+
 variable "attic_cache_name" {
   description = "Attic cache name created during bootstrap."
   type        = string
@@ -219,6 +299,29 @@ variable "attic_pull_token_validity" {
   description = "Validity period used when minting the shared Attic pull-only token for developer systems. Accepts humantime values such as 30d, 3 months, or 1y."
   type        = string
   default     = "1y"
+}
+
+variable "crowdsec_enabled" {
+  description = "Whether to bootstrap CrowdSec as containerized services on the runner host."
+  type        = bool
+  default     = true
+}
+
+variable "crowdsec_lapi_port" {
+  description = "CrowdSec local API port exposed on the runner host loopback interface."
+  type        = number
+  default     = 8080
+
+  validation {
+    condition     = var.crowdsec_lapi_port >= 1 && var.crowdsec_lapi_port <= 65535
+    error_message = "crowdsec_lapi_port must be between 1 and 65535."
+  }
+}
+
+variable "crowdsec_firewall_bouncer_enabled" {
+  description = "Whether to run the CrowdSec firewall bouncer container with NET_ADMIN capabilities."
+  type        = bool
+  default     = true
 }
 
 variable "admin_cidrs" {

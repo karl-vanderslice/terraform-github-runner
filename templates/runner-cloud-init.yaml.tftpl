@@ -47,6 +47,9 @@ write_files:
       attic_secret_mount='${attic_vault_secret_mount}'
       attic_secret_name='${attic_vault_secret_name}'
       attic_secret_key='${attic_vault_secret_key}'
+      crowdsec_enabled='${crowdsec_enabled}'
+      crowdsec_lapi_port='${crowdsec_lapi_port}'
+      crowdsec_firewall_bouncer_enabled='${crowdsec_firewall_bouncer_enabled}'
 
       install_vault_if_needed() {
         if command -v vault >/dev/null 2>&1; then
@@ -321,6 +324,65 @@ EOF
         date --iso-8601=seconds >"$${bootstrap_marker}"
       }
 
+      bootstrap_crowdsec() {
+        if [[ "$${crowdsec_enabled}" != "true" ]]; then
+          return
+        fi
+
+        local crowdsec_root="$${workspace_mount_path}/crowdsec"
+        local crowdsec_config_dir="$${crowdsec_root}/config"
+        local crowdsec_data_dir="$${crowdsec_root}/data"
+        local bouncer_key_file="$${crowdsec_root}/firewall-bouncer.key"
+        local bouncer_key
+
+        mkdir -p "$${crowdsec_config_dir}" "$${crowdsec_data_dir}"
+
+        cat >"$${crowdsec_config_dir}/acquis.yaml" <<EOF
+filenames:
+  - /var/log/auth.log
+labels:
+  type: syslog
+EOF
+
+        docker rm -f crowdsec crowdsec-firewall-bouncer >/dev/null 2>&1 || true
+
+        docker run -d \
+          --name crowdsec \
+          --restart unless-stopped \
+          --network host \
+          -v "$${crowdsec_config_dir}:/etc/crowdsec" \
+          -v "$${crowdsec_data_dir}:/var/lib/crowdsec/data" \
+          -v /var/log:/var/log:ro \
+          -v /run/log/journal:/run/log/journal:ro \
+          crowdsecurity/crowdsec:latest >/dev/null
+
+        if [[ "$${crowdsec_firewall_bouncer_enabled}" != "true" ]]; then
+          return
+        fi
+
+        if [[ ! -s "$${bouncer_key_file}" ]]; then
+          bouncer_key=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48)
+          until docker exec crowdsec cscli lapi status >/dev/null 2>&1; do
+            sleep 2
+          done
+          docker exec crowdsec cscli bouncers add hcloud-firewall-bouncer -k "$${bouncer_key}" >/dev/null
+          printf '%s\n' "$${bouncer_key}" >"$${bouncer_key_file}"
+          chmod 0600 "$${bouncer_key_file}"
+        fi
+
+        bouncer_key=$(cat "$${bouncer_key_file}")
+
+        docker run -d \
+          --name crowdsec-firewall-bouncer \
+          --restart unless-stopped \
+          --network host \
+          --cap-add NET_ADMIN \
+          --cap-add NET_RAW \
+          -e CROWDSEC_AGENT_HOST="127.0.0.1:$${crowdsec_lapi_port}" \
+          -e CROWDSEC_BOUNCER_API_KEY="$${bouncer_key}" \
+          fbonalair/crowdsec-firewall-bouncer:latest >/dev/null
+      }
+
       useradd --create-home --home-dir "$runner_home" --shell /bin/bash actions || true
       ensure_group_membership
 
@@ -328,6 +390,7 @@ EOF
       ensure_workspace_mount
       write_attic_files
       bootstrap_attic
+      bootstrap_crowdsec
 
       readarray -t target_repositories < <(tr ',' '\n' <<<"$github_repositories_csv" | sed '/^$/d')
 
