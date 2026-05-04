@@ -7,6 +7,7 @@ This repository provisions an opt-in self-hosted GitHub Actions runner on Hetzne
 As of the CI/CD consolidation to `terraform-cloudflare-docs-sites`, the self-hosted runner is **disabled by default** and not required for standard workflows. All documentation publishing and validation runs on GitHub-hosted `ubuntu-latest` runners via the centralized `deploy-hub.yml` workflow.
 
 **Re-enable this runner only if:**
+
 - Testing ARM-specific builds or compatibility
 - Running canary deployments on Hetzner infrastructure
 - You explicitly set `CI_CANARY_HETZNER = '1'` in a workflow to route jobs to the self-hosted runner
@@ -16,6 +17,8 @@ As of the CI/CD consolidation to `terraform-cloudflare-docs-sites`, the self-hos
 - Keep `runner_enabled = false` until `just lint`, `just test`, and `just plan` are clean.
 - Start with `registration_mode = "github-provider"` for first deployment.
 - Move to `registration_mode = "vault-token"` when Vault-backed bootstrap is ready.
+- Use `runner_image_family = "nixos"` only when `hcloud_image` points at a
+  custom NixOS image or snapshot built from this repository.
 
 ## Hetzner Baseline
 
@@ -23,6 +26,28 @@ As of the CI/CD consolidation to `terraform-cloudflare-docs-sites`, the self-hos
 - Image: `ubuntu-24.04`
 - Region default: `nbg1`
 - Persistent volume: default `100` GB, mounted for runner cache/work path
+- Optional second volume: disabled by default, mounted at `/srv/workspaces`
+  for checked-out repositories, future Attic data, and other durable CI state
+
+## NixOS Attic Path
+
+- Build the qcow artifact with `just build-nixos-image`.
+- Publish that artifact through your Hetzner custom image or snapshot workflow,
+  then set `hcloud_image` to the resulting image name or ID.
+- Set `runner_image_family = "nixos"` and `attic_enabled = true`.
+- Set `workspace_volume_size_gb > 0`; Attic stores its SQLite database and NAR
+  objects under `/srv/workspaces/attic`.
+- Pre-populate the Vault secret named by `attic_vault_secret_mount` and
+  `attic_vault_secret_name` with the
+  `attic_vault_secret_key = "ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64"` field as
+  a base64-encoded RSA PKCS#1 PEM private key.
+- On first boot, cloud-init writes `/etc/atticd.toml`, starts `atticd`, creates
+  the cache, reuses pre-seeded Vault tokens when present, and otherwise mints
+  `ATTIC_CACHE_PULL_TOKEN` and `ATTIC_CACHE_RW_TOKEN` before patching them plus
+  `ATTIC_PUBLIC_KEY`, `ATTIC_API_ENDPOINT`, and
+  `ATTIC_SUBSTITUTER_ENDPOINT` back into Vault.
+
+Operator runbook: see `docs/guides/enable-attic-with-nixos-image.md`.
 
 ## Security Baseline
 
@@ -46,3 +71,9 @@ Additional labels can be appended with `runner_labels`.
 ```yaml
 runs-on: ${{ vars.CI_CANARY_HETZNER == '1' && fromJSON('["self-hosted","Linux","ARM64","hetzner","build"]') || 'ubuntu-latest' }}
 ```
+
+## Attic rollout
+
+The intended cache endpoint is `attic.vslice.net` on the same Hetzner host as
+the runner. The NixOS image path is now the supported bootstrap route for that
+service. Keep Ubuntu images on the slim runner-only path.

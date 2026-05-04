@@ -1,14 +1,7 @@
 #cloud-config
-package_update: true
-package_upgrade: true
-packages:
-  - ca-certificates
-  - curl
-  - git
-  - jq
-  - tar
-  - unzip
-  - docker.io
+package_update: ${runner_image_family == "ubuntu"}
+package_upgrade: ${runner_image_family == "ubuntu"}
+packages: ${jsonencode(runner_image_family == "ubuntu" ? ["ca-certificates", "curl", "git", "jq", "tar", "unzip", "docker.io"] : [])}
 
 write_files:
   - path: /usr/local/bin/github-runner-bootstrap
@@ -24,6 +17,7 @@ write_files:
       runner_group='${runner_group}'
       runner_labels='${runner_labels_csv}'
       registration_tokens_json='${registration_tokens_json}'
+      runner_image_family='${runner_image_family}'
       runner_version='${actions_runner_version}'
       runner_arch='${actions_runner_arch}'
       registration_mode='${registration_mode}'
@@ -39,6 +33,20 @@ write_files:
       github_repository='${github_repository}'
       github_repositories_csv='${github_repositories_csv}'
       cache_volume_name='${cache_volume_name}'
+      workspace_volume_name='${workspace_volume_name}'
+      workspace_mount_path='${workspace_mount_path}'
+      attic_enabled='${attic_enabled}'
+      attic_domain='${attic_domain}'
+      attic_endpoint='${attic_endpoint}'
+      attic_port='${attic_port}'
+      attic_cache_name='${attic_cache_name}'
+      attic_cache_public='${attic_cache_public}'
+      attic_cache_priority='${attic_cache_priority}'
+      attic_ci_token_validity='${attic_ci_token_validity}'
+      attic_pull_token_validity='${attic_pull_token_validity}'
+      attic_secret_mount='${attic_vault_secret_mount}'
+      attic_secret_name='${attic_vault_secret_name}'
+      attic_secret_key='${attic_vault_secret_key}'
 
       install_vault_if_needed() {
         if command -v vault >/dev/null 2>&1; then
@@ -52,12 +60,56 @@ write_files:
         chmod 0755 /usr/local/bin/vault
       }
 
+      ensure_attic_cli() {
+        if [[ "$${attic_enabled}" != "true" ]]; then
+          return
+        fi
+
+        if ! command -v attic >/dev/null 2>&1 || ! command -v atticd >/dev/null 2>&1 || ! command -v atticadm >/dev/null 2>&1; then
+          echo "attic_enabled requires attic, atticd, and atticadm on the host image" >&2
+          exit 1
+        fi
+      }
+
+      ensure_group_membership() {
+        if ! getent group docker >/dev/null 2>&1; then
+          return
+        fi
+
+        if id actions >/dev/null 2>&1; then
+          usermod -aG docker actions || true
+        fi
+      }
+
+      ensure_bind_mount() {
+        local source_path="$1"
+        local target_path="$2"
+
+        mkdir -p "$${target_path}"
+        if [[ -d "$${source_path}" ]]; then
+          mountpoint -q "$${target_path}" || mount --bind "$${source_path}" "$${target_path}"
+        fi
+      }
+
       ensure_cache_mount() {
         local mount_path="/mnt/HC_Volume_$${cache_volume_name}"
         mkdir -p /var/cache/github-actions
         if [[ -d "$${mount_path}" ]]; then
           mkdir -p "$${mount_path}/github-actions"
-          mountpoint -q /var/cache/github-actions || mount --bind "$${mount_path}/github-actions" /var/cache/github-actions
+          ensure_bind_mount "$${mount_path}/github-actions" /var/cache/github-actions
+        fi
+      }
+
+      ensure_workspace_mount() {
+        if [[ -z "$${workspace_volume_name}" ]]; then
+          return
+        fi
+
+        local mount_path="/mnt/HC_Volume_$${workspace_volume_name}"
+        mkdir -p "$${workspace_mount_path}"
+        if [[ -d "$${mount_path}" ]]; then
+          mkdir -p "$${mount_path}/attic" "$${mount_path}/workspaces"
+          ensure_bind_mount "$${mount_path}" "$${workspace_mount_path}"
         fi
       }
 
@@ -92,10 +144,190 @@ write_files:
         vault kv get -mount="$vault_secret_mount" -field="$vault_secret_key" "$vault_secret_name"
       }
 
+      get_vault_field() {
+        local mount_name="$1"
+        local secret_name="$2"
+        local field_name="$3"
+
+        install_vault_if_needed
+        export VAULT_ADDR="$vault_addr"
+        export VAULT_NAMESPACE="$vault_namespace"
+        export VAULT_TOKEN="$vault_bootstrap_token"
+
+        vault kv get -mount="$${mount_name}" -field="$${field_name}" "$${secret_name}"
+      }
+
+      upsert_vault_secret() {
+        local mount_name="$1"
+        local secret_name="$2"
+        shift 2
+
+        install_vault_if_needed
+        export VAULT_ADDR="$vault_addr"
+        export VAULT_NAMESPACE="$vault_namespace"
+        export VAULT_TOKEN="$vault_bootstrap_token"
+
+        if vault kv get -mount="$${mount_name}" "$${secret_name}" >/dev/null 2>&1; then
+          vault kv patch -mount="$${mount_name}" "$${secret_name}" "$@"
+        else
+          vault kv put -mount="$${mount_name}" "$${secret_name}" "$@"
+        fi
+      }
+
+      write_attic_files() {
+        if [[ "$${attic_enabled}" != "true" ]]; then
+          return
+        fi
+
+        ensure_attic_cli
+
+        local attic_root="$${workspace_mount_path}/attic"
+        local attic_storage_path="$${attic_root}/storage"
+        local attic_db_path="$${attic_root}/server.db"
+        local attic_secret
+
+        attic_secret=$(get_vault_field "$attic_secret_mount" "$attic_secret_name" "$attic_secret_key")
+
+        mkdir -p "$${attic_root}" "$${attic_storage_path}" "$${attic_root}/bootstrap"
+        touch "$${attic_db_path}"
+        chown -R atticd:atticd "$${attic_root}"
+        chmod 0750 "$${attic_root}" "$${attic_storage_path}" "$${attic_root}/bootstrap"
+        chmod 0640 "$${attic_db_path}"
+
+        cat >/etc/atticd.env <<EOF
+ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64=$${attic_secret}
+EOF
+        chmod 0600 /etc/atticd.env
+
+        cat >/etc/atticd.toml <<EOF
+listen = "0.0.0.0:$${attic_port}"
+allowed-hosts = ["$${attic_domain}"]
+api-endpoint = "$${attic_endpoint}"
+substituter-endpoint = "$${attic_endpoint}"
+
+[database]
+url = "sqlite://$${attic_db_path}"
+
+[storage]
+type = "local"
+path = "$${attic_storage_path}"
+
+[chunking]
+nar-size-threshold = 131072
+min-size = 65536
+avg-size = 131072
+max-size = 262144
+
+[compression]
+type = "zstd"
+EOF
+        chmod 0640 /etc/atticd.toml
+      }
+
+      bootstrap_attic() {
+        if [[ "$${attic_enabled}" != "true" ]]; then
+          return
+        fi
+
+        local attic_root="$${workspace_mount_path}/attic"
+        local bootstrap_dir="$${attic_root}/bootstrap"
+        local bootstrap_marker="$${bootstrap_dir}/complete"
+        local local_endpoint="http://127.0.0.1:$${attic_port}/"
+        local root_token
+        local pull_token
+        local ci_token
+        local cache_config_json
+        local public_key
+        local cache_scope="bootstrap-local:$${attic_cache_name}"
+
+        mkdir -p "$${bootstrap_dir}"
+
+        systemctl daemon-reload
+        systemctl enable --now atticd
+
+        if [[ -f "$${bootstrap_marker}" ]]; then
+          return
+        fi
+
+        root_token=$(atticadm -f /etc/atticd.toml make-token \
+          --sub bootstrap-root \
+          --validity 24h \
+          --pull '*' \
+          --push '*' \
+          --delete '*' \
+          --create-cache '*' \
+          --configure-cache '*' \
+          --configure-cache-retention '*' \
+          --destroy-cache '*')
+
+        attic login bootstrap-local "$${local_endpoint}" "$${root_token}" --set-default
+
+        if ! attic cache info "$${cache_scope}" >/dev/null 2>&1; then
+          attic cache create "$${cache_scope}" --priority "$${attic_cache_priority}"
+        fi
+
+        if [[ "$${attic_cache_public}" == "true" ]]; then
+          attic cache configure "$${cache_scope}" --public
+        fi
+
+        if pull_token=$(get_vault_field "$attic_secret_mount" "$attic_secret_name" ATTIC_CACHE_PULL_TOKEN 2>/dev/null); then
+          pull_token=$(printf '%s' "$${pull_token}" | tr -d '\n')
+        else
+          pull_token=""
+        fi
+
+        if [[ -z "$${pull_token}" ]]; then
+          pull_token=$(atticadm -f /etc/atticd.toml make-token \
+            --sub shared-attic-clients \
+            --validity "$${attic_pull_token_validity}" \
+            --pull "$${attic_cache_name}")
+        fi
+
+        if ci_token=$(get_vault_field "$attic_secret_mount" "$attic_secret_name" ATTIC_CACHE_RW_TOKEN 2>/dev/null); then
+          ci_token=$(printf '%s' "$${ci_token}" | tr -d '\n')
+        else
+          ci_token=""
+        fi
+
+        if [[ -z "$${ci_token}" ]]; then
+          ci_token=$(atticadm -f /etc/atticd.toml make-token \
+            --sub github-actions-ci \
+            --validity "$${attic_ci_token_validity}" \
+            --pull "$${attic_cache_name}" \
+            --push "$${attic_cache_name}")
+        fi
+
+        cache_config_json=$(curl -fsSL \
+          -H "Authorization: Bearer $${root_token}" \
+          "$${local_endpoint}_api/v1/cache-config/$${attic_cache_name}")
+        public_key=$(jq -r '.public_key // empty' <<<"$${cache_config_json}")
+
+        printf '%s\n' "$${pull_token}" >"$${bootstrap_dir}/pull-token"
+        printf '%s\n' "$${ci_token}" >"$${bootstrap_dir}/ci-token"
+        printf '%s\n' "$${public_key}" >"$${bootstrap_dir}/public-key"
+        chmod 0600 "$${bootstrap_dir}/pull-token"
+        chmod 0600 "$${bootstrap_dir}/ci-token"
+        chmod 0640 "$${bootstrap_dir}/public-key"
+        chown -R root:root "$${bootstrap_dir}"
+
+        upsert_vault_secret "$attic_secret_mount" "$attic_secret_name" \
+          ATTIC_CACHE_NAME="$${attic_cache_name}" \
+          ATTIC_CACHE_PULL_TOKEN="$${pull_token}" \
+          ATTIC_CACHE_RW_TOKEN="$${ci_token}" \
+          ATTIC_PUBLIC_KEY="$${public_key}" \
+          ATTIC_API_ENDPOINT="$${attic_endpoint}" \
+          ATTIC_SUBSTITUTER_ENDPOINT="$${attic_endpoint}"
+
+        date --iso-8601=seconds >"$${bootstrap_marker}"
+      }
+
       useradd --create-home --home-dir "$runner_home" --shell /bin/bash actions || true
-      usermod -aG docker actions || true
+      ensure_group_membership
 
       ensure_cache_mount
+      ensure_workspace_mount
+      write_attic_files
+      bootstrap_attic
 
       readarray -t target_repositories < <(tr ',' '\n' <<<"$github_repositories_csv" | sed '/^$/d')
 

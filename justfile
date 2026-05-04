@@ -7,7 +7,7 @@ enter-nix *args:
   @if [[ -n "${IN_NIX_SHELL:-}" ]]; then \
     just --justfile "{{justfile()}}" {{args}}; \
   else \
-    nix develop --command just --justfile "{{justfile()}}" {{args}}; \
+    direnv exec . just --justfile "{{justfile()}}" {{args}}; \
   fi
 
 format:
@@ -53,6 +53,12 @@ test:
 _test:
   terraform init -backend=false
   terraform validate
+
+build-nixos-image:
+  @just enter-nix _build-nixos-image
+
+_build-nixos-image:
+  nix build .#nixos-runner-hetzner-image
 
 pre-commit:
   @just enter-nix _pre-commit

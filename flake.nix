@@ -86,6 +86,8 @@
           packages = with pkgs; [
             alejandra
             ansible
+            attic-client
+            attic-server
             bitwarden-cli
             checkov
             deadnix

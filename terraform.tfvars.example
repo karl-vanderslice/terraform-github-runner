@@ -17,7 +17,18 @@ github_runner_group = "Default"
 hcloud_location      = "nbg1"
 hcloud_server_type   = "cax21"       # ARM 4 vCPU / 8 GB
 hcloud_image         = "ubuntu-24.04"
+runner_image_family  = "ubuntu"
 hcloud_volume_size_gb = 100
+workspace_volume_size_gb = 0          # Set > 0 to attach a second volume for workspaces and future Attic data
+workspace_mount_path     = "/srv/workspaces"
+attic_enabled            = false
+attic_domain             = "attic.vslice.net"
+attic_endpoint_scheme    = "http"    # Switch to https once a reverse proxy/TLS terminator fronts the service
+attic_port               = 8080
+attic_cache_name         = "github-actions"
+attic_cache_public       = false
+attic_pull_token_validity = "1y"
+attic_ci_token_validity  = "1y"
 
 # Optional SSH access for maintenance.
 # admin_cidrs = ["203.0.113.10/32"]
@@ -31,6 +42,9 @@ hcloud_volume_size_gb = 100
 # vault_runner_secret_mount = "mcp-kv"
 # vault_runner_secret_name  = "github/runner-bootstrap"
 # vault_runner_secret_key   = "GITHUB_TOKEN"
+# attic_vault_secret_mount  = "mcp-kv"
+# attic_vault_secret_name   = "github/runner-attic"
+# attic_vault_secret_key    = "ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64"
 
 # Optional policy bootstrap
 # enable_vault_bootstrap_policy = true

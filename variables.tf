@@ -113,6 +113,17 @@ variable "hcloud_image" {
   default     = "ubuntu-24.04"
 }
 
+variable "runner_image_family" {
+  description = "Host image family. Use nixos when hcloud_image points at a custom NixOS image or snapshot that includes cloud-init support."
+  type        = string
+  default     = "ubuntu"
+
+  validation {
+    condition     = contains(["ubuntu", "nixos"], var.runner_image_family)
+    error_message = "runner_image_family must be ubuntu or nixos."
+  }
+}
+
 variable "hcloud_volume_size_gb" {
   description = "Persistent volume size for build/cache data in GB."
   type        = number
@@ -122,6 +133,92 @@ variable "hcloud_volume_size_gb" {
     condition     = var.hcloud_volume_size_gb >= 10
     error_message = "hcloud_volume_size_gb must be >= 10."
   }
+}
+
+variable "workspace_volume_size_gb" {
+  description = "Optional second Hetzner volume for workspaces, Attic data, and other durable CI state. Set to 0 to disable."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.workspace_volume_size_gb == 0 || var.workspace_volume_size_gb >= 10
+    error_message = "workspace_volume_size_gb must be 0 or >= 10."
+  }
+}
+
+variable "workspace_mount_path" {
+  description = "Host path where the optional workspace volume is bind-mounted when enabled."
+  type        = string
+  default     = "/srv/workspaces"
+}
+
+variable "attic_enabled" {
+  description = "Whether to bootstrap an Attic binary cache on the runner host. Requires runner_image_family = nixos and a workspace volume."
+  type        = bool
+  default     = false
+}
+
+variable "attic_domain" {
+  description = "Canonical DNS name for the Attic service."
+  type        = string
+  default     = "attic.vslice.net"
+
+  validation {
+    condition     = !var.attic_enabled || length(trimspace(var.attic_domain)) > 0
+    error_message = "attic_domain must be set when attic_enabled is true."
+  }
+}
+
+variable "attic_endpoint_scheme" {
+  description = "Endpoint scheme advertised by Attic. Use https when a reverse proxy or TLS terminator fronts the service."
+  type        = string
+  default     = "http"
+
+  validation {
+    condition     = contains(["http", "https"], var.attic_endpoint_scheme)
+    error_message = "attic_endpoint_scheme must be http or https."
+  }
+}
+
+variable "attic_port" {
+  description = "TCP port used by the Attic API and substituter endpoint on the runner host."
+  type        = number
+  default     = 8080
+
+  validation {
+    condition     = var.attic_port >= 1 && var.attic_port <= 65535
+    error_message = "attic_port must be between 1 and 65535."
+  }
+}
+
+variable "attic_cache_name" {
+  description = "Attic cache name created during bootstrap."
+  type        = string
+  default     = "github-actions"
+}
+
+variable "attic_cache_public" {
+  description = "Whether the Attic cache is public for pull access."
+  type        = bool
+  default     = false
+}
+
+variable "attic_cache_priority" {
+  description = "Priority configured on the Attic cache. Lower numbers have higher priority; cache.nixos.org uses 40."
+  type        = number
+  default     = 41
+}
+
+variable "attic_ci_token_validity" {
+  description = "Validity period used when minting the Attic CI read-write token. Accepts humantime values such as 30d, 3 months, or 1y."
+  type        = string
+  default     = "1y"
+}
+
+variable "attic_pull_token_validity" {
+  description = "Validity period used when minting the shared Attic pull-only token for developer systems. Accepts humantime values such as 30d, 3 months, or 1y."
+  type        = string
+  default     = "1y"
 }
 
 variable "admin_cidrs" {
@@ -164,6 +261,24 @@ variable "vault_runner_secret_key" {
   description = "Field inside the Vault secret that stores the GitHub API token."
   type        = string
   default     = "GITHUB_TOKEN"
+}
+
+variable "attic_vault_secret_mount" {
+  description = "Vault KV v2 mount name containing the Attic signing secret and where bootstrap metadata is written back."
+  type        = string
+  default     = "mcp-kv"
+}
+
+variable "attic_vault_secret_name" {
+  description = "Vault secret name containing the Attic server signing secret. Bootstrap patches the same secret with pull and CI tokens, the public key, and the published endpoints."
+  type        = string
+  default     = "github/runner-attic"
+}
+
+variable "attic_vault_secret_key" {
+  description = "Field inside the Vault secret that stores the base64-encoded RSA PKCS#1 PEM private key used by ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64."
+  type        = string
+  default     = "ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64"
 }
 
 variable "vault_bootstrap_token" {
