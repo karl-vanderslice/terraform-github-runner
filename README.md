@@ -78,6 +78,9 @@ just apply
 1. `runner_enabled` is a safety switch. Keep it `false` until plan output is reviewed.
 2. `runner_name` is optional. When unset, Terraform uses a persistent
    `random_pet` name with `github-runner-` prefix so hostnames stay generic.
+   This codifies a pets-vs-cattle policy: instances remain replaceable
+   infrastructure, but human-readable pet names are preferred over rigid
+   environment-bound hostnames.
 3. `registration_scope` controls org-level vs repo-level registration.
 4. `registration_mode` controls how registration tokens are sourced:
    - `github-provider`: Terraform fetches short-lived token(s) at apply.

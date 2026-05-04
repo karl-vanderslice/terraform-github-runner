@@ -19,6 +19,10 @@ This deployment is intended for private Nix CI workloads that need:
 ## Deployment Pattern
 
 - Keep `runner_enabled = true` for the nix-config runner deployment.
+- Keep the default random pet-name runner naming unless a hard requirement
+  exists for an explicit name. This repository treats runner hosts as cattle
+  for replacement and drift control while using pet-style names for operator
+  ergonomics.
 - Start with `registration_mode = "github-provider"` for first deployment.
 - Move to `registration_mode = "vault-token"` when Vault-backed bootstrap is ready.
 - Use `runner_image_family = "nixos"` only when `hcloud_image` points at a

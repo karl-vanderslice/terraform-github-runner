@@ -24,6 +24,8 @@ Extend this stack to manage Attic edge and host hardening directly:
 - Bootstrap CrowdSec as containerized services (`crowdsec` and
   `crowdsec-firewall-bouncer`) through cloud-init.
 - Keep CrowdSec enabled by default and run it with Docker-managed lifecycle.
+- Keep runner host naming generic by default with persistent `random_pet`
+  identifiers, reflecting a pets-vs-cattle operating policy.
 
 ## Consequences
 
@@ -31,6 +33,7 @@ Extend this stack to manage Attic edge and host hardening directly:
   Terraform-managed.
 - Attic origin exposure is reduced by defaulting ingress to Cloudflare ranges.
 - Host-level security posture improves with automated detection and blocking.
+- Runner lifecycle remains replacement-friendly while names stay human-readable.
 - Bootstrap complexity increases, especially around CrowdSec container startup
   ordering and bouncer key registration.
 - Operational validation must now include Cloudflare API token/zone inputs and
