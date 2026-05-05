@@ -2,7 +2,8 @@ locals {
   github_owner_effective = coalesce(var.github_owner, "")
   target_repositories    = distinct(compact(concat(var.github_repository == null ? [] : [var.github_repository], var.github_repositories)))
   repository_suffix      = length(local.target_repositories) > 0 ? local.target_repositories[0] : local.github_owner_effective
-  effective_runner_name  = coalesce(var.runner_name, random_pet.runner_name[0].id)
+  runner_name_override   = var.runner_name == null ? null : (length(trimspace(var.runner_name)) > 0 ? trimspace(var.runner_name) : null)
+  effective_runner_name  = coalesce(local.runner_name_override, random_pet.runner_name[0].id)
   runner_arch            = "arm64"
   runner_labels          = distinct(concat(["hetzner", "arm64", "build", "cache"], var.runner_labels))
   runner_url             = var.registration_scope == "organization" ? "https://github.com/${local.github_owner_effective}" : "https://github.com/${local.github_owner_effective}/${local.repository_suffix}"
@@ -17,7 +18,7 @@ locals {
 }
 
 resource "random_pet" "runner_name" {
-  count = var.runner_enabled && var.runner_name == null ? 1 : 0
+  count = var.runner_enabled && local.runner_name_override == null ? 1 : 0
 
   prefix    = "github-runner"
   separator = "-"

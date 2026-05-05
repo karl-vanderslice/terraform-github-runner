@@ -69,6 +69,11 @@ variable "runner_name" {
   description = "Runner name override. Leave null to use a persistent random pet-name such as github-runner-quiet-otter."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.runner_name == null || length(trimspace(var.runner_name)) > 0
+    error_message = "runner_name must be null or a non-empty string."
+  }
 }
 
 variable "runner_labels" {

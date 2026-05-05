@@ -5,7 +5,8 @@ github_owner        = "your-github-owner"
 github_repository   = "nix-config"
 github_repositories = []
 github_runner_group = "Default"
-runner_name         = "agent-hub-hetzner-arm"
+# Leave runner_name unset to default to persistent random_pet naming.
+# runner_name       = "github-runner-quiet-otter"
 runner_labels       = ["nix-config"]
 
 # Hetzner-only baseline for this repository.
