@@ -2,6 +2,10 @@
   description = "Terraform Hetzner GitHub runner dev shell";
 
   inputs = {
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     flake-parts.url = "github:hercules-ci/flake-parts";
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
     nixos-generators.url = "github:nix-community/nixos-generators";
@@ -26,6 +30,21 @@
         "aarch64-darwin"
       ];
 
+      flake = {
+        nixosConfigurations.seed-publisher = inputs.nixpkgs.lib.nixosSystem {
+          system = "aarch64-linux";
+          specialArgs = {
+            runner-src = ./.;
+          };
+          modules = [
+            inputs.disko.nixosModules.disko
+            ./.agent-context/nixos-image-seed/disko.nix
+            ./.agent-context/nixos-image-seed/hardware-configuration.nix
+            ./.agent-context/nixos-image-seed/host.nix
+          ];
+        };
+      };
+
       perSystem = {
         config,
         system,
@@ -35,10 +54,6 @@
           inherit system;
           config.allowUnfree = true;
         };
-
-        terraformCompat = pkgs.writeShellScriptBin "terraform" ''
-          exec ${pkgs.opentofu}/bin/tofu "$@"
-        '';
 
         preCommit = inputs.git-hooks-nix.lib.${system}.run {
           src = ./.;
@@ -92,16 +107,17 @@
             checkov
             deadnix
             gh
+            gnutar
             hcloud
             jq
             just
             markdownlint-cli2
-            packer
+            openssh
             pre-commit
             shellcheck
             statix
+            terraform
             terraform-docs
-            terraformCompat
             vault
             yamllint
             zensical

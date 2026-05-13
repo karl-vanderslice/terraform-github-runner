@@ -47,6 +47,30 @@ _apply:
   terraform init -backend-config=backend.hcl
   terraform apply
 
+apply-auto:
+  @just enter-nix _apply-auto
+
+_apply-auto:
+  chmod +x scripts/with-runner-secrets.sh
+  scripts/with-runner-secrets.sh -- terraform init -backend-config=backend.hcl
+  scripts/with-runner-secrets.sh -- terraform apply -auto-approve
+
+plan-guarded:
+  @just enter-nix _plan-guarded
+
+_plan-guarded:
+  chmod +x scripts/with-runner-secrets.sh
+  scripts/with-runner-secrets.sh -- terraform init -backend-config=backend.hcl
+  scripts/with-runner-secrets.sh -- terraform plan
+
+destroy-auto:
+  @just enter-nix _destroy-auto
+
+_destroy-auto:
+  chmod +x scripts/with-runner-secrets.sh
+  scripts/with-runner-secrets.sh -- terraform init -backend-config=backend.hcl
+  scripts/with-runner-secrets.sh -- terraform destroy -auto-approve
+
 test:
   @just enter-nix _test
 
@@ -59,6 +83,14 @@ build-nixos-image:
 
 _build-nixos-image:
   nix build .#nixos-runner-hetzner-image
+
+publish-nixos-image *args:
+  @just enter-nix _publish-nixos-image {{args}}
+
+_publish-nixos-image *args:
+  chmod +x scripts/with-runner-secrets.sh scripts/publish-nixos-image.sh
+  nix build .#nixos-runner-hetzner-image
+  scripts/with-runner-secrets.sh -- scripts/publish-nixos-image.sh {{args}}
 
 pre-commit:
   @just enter-nix _pre-commit

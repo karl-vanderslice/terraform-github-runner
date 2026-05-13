@@ -1,3 +1,4 @@
+hostname     = "app.terraform.io"
 organization = "your-hcp-terraform-org"
 
 workspaces {

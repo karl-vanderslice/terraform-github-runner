@@ -1,6 +1,8 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  backend "remote" {}
+
   required_providers {
     github = {
       source  = "integrations/github"
@@ -25,6 +27,11 @@ terraform {
     vault = {
       source  = "hashicorp/vault"
       version = "~> 5.9"
+    }
+
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
     }
   }
 }

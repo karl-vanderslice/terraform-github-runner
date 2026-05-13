@@ -9,6 +9,7 @@ write_files:
     owner: root:root
     content: |
       #!/usr/bin/env bash
+      export PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:/run/wrappers/bin:/run/current-system/sw/bin
       set -euo pipefail
 
       runner_home=/opt/actions-runner
@@ -16,6 +17,7 @@ write_files:
       runner_name='${runner_name}'
       runner_group='${runner_group}'
       runner_labels='${runner_labels_csv}'
+      runner_ephemeral='${runner_ephemeral}'
       registration_tokens_json='${registration_tokens_json}'
       runner_image_family='${runner_image_family}'
       runner_version='${actions_runner_version}'
@@ -25,6 +27,9 @@ write_files:
       vault_addr='${vault_addr}'
       vault_namespace='${vault_namespace}'
       vault_bootstrap_token='${vault_bootstrap_token}'
+      vault_auth_mount='${vault_auth_mount}'
+      vault_admin_automation_role_id='${vault_admin_automation_role_id}'
+      vault_admin_automation_secret_id='${vault_admin_automation_secret_id}'
       vault_secret_mount='${vault_runner_secret_mount}'
       vault_secret_name='${vault_runner_secret_name}'
       vault_secret_key='${vault_runner_secret_key}'
@@ -32,13 +37,22 @@ write_files:
       github_owner='${github_owner}'
       github_repository='${github_repository}'
       github_repositories_csv='${github_repositories_csv}'
+      admin_cidrs_json='${admin_cidrs_json}'
+      github_actions_ssh_ingress_enabled='${github_actions_ssh_ingress_enabled}'
+      cache_volume_id='${cache_volume_id}'
       cache_volume_name='${cache_volume_name}'
+      workspace_volume_id='${workspace_volume_id}'
       workspace_volume_name='${workspace_volume_name}'
       workspace_mount_path='${workspace_mount_path}'
       attic_enabled='${attic_enabled}'
       attic_domain='${attic_domain}'
+      attic_endpoint_scheme='${attic_endpoint_scheme}'
       attic_endpoint='${attic_endpoint}'
+      attic_origin_tls_enabled='${attic_origin_tls_enabled}'
+      attic_origin_tls_certificate='${attic_origin_tls_certificate}'
+      attic_origin_tls_private_key='${attic_origin_tls_private_key}'
       attic_port='${attic_port}'
+      attic_internal_port='${attic_internal_port}'
       attic_cache_name='${attic_cache_name}'
       attic_cache_public='${attic_cache_public}'
       attic_cache_priority='${attic_cache_priority}'
@@ -50,6 +64,29 @@ write_files:
       crowdsec_enabled='${crowdsec_enabled}'
       crowdsec_lapi_port='${crowdsec_lapi_port}'
       crowdsec_firewall_bouncer_enabled='${crowdsec_firewall_bouncer_enabled}'
+
+      systemd_unit_dir=/etc/systemd/system
+      attic_runtime_dir=/etc
+      attic_env_path=/etc/atticd.env
+      attic_toml_path=/etc/atticd.toml
+      caddy_config_dir=/etc/caddy
+      caddyfile_path=/etc/caddy/Caddyfile
+      attic_origin_cert_path=/etc/caddy/attic-origin.crt
+      attic_origin_key_path=/etc/caddy/attic-origin.key
+      cache_volume_mount_path="/mnt/HC_Volume_$${cache_volume_id}"
+      workspace_volume_mount_path="/mnt/HC_Volume_$${workspace_volume_id}"
+      vault_runtime_token=''
+
+      if [[ "$${runner_image_family}" == "nixos" ]]; then
+        systemd_unit_dir=/run/systemd/system
+        attic_runtime_dir=/run/github-runner-runtime/attic
+        attic_env_path="$${attic_runtime_dir}/atticd.env"
+        attic_toml_path="$${attic_runtime_dir}/atticd.toml"
+        caddy_config_dir=/run/github-runner-runtime/caddy
+        caddyfile_path="$${caddy_config_dir}/Caddyfile"
+        attic_origin_cert_path="$${caddy_config_dir}/attic-origin.crt"
+        attic_origin_key_path="$${caddy_config_dir}/attic-origin.key"
+      fi
 
       install_vault_if_needed() {
         if command -v vault >/dev/null 2>&1; then
@@ -68,8 +105,8 @@ write_files:
           return
         fi
 
-        if ! command -v attic >/dev/null 2>&1 || ! command -v atticd >/dev/null 2>&1 || ! command -v atticadm >/dev/null 2>&1; then
-          echo "attic_enabled requires attic, atticd, and atticadm on the host image" >&2
+        if ! command -v attic >/dev/null 2>&1 || ! command -v atticd >/dev/null 2>&1 || ! command -v atticadm >/dev/null 2>&1 || ! command -v caddy >/dev/null 2>&1; then
+          echo "attic_enabled requires attic, atticd, atticadm, and caddy on the host image" >&2
           exit 1
         fi
       }
@@ -84,36 +121,183 @@ write_files:
         fi
       }
 
-      ensure_bind_mount() {
-        local source_path="$1"
-        local target_path="$2"
-
-        mkdir -p "$${target_path}"
-        if [[ -d "$${source_path}" ]]; then
-          mountpoint -q "$${target_path}" || mount --bind "$${source_path}" "$${target_path}"
-        fi
+      mount_unit_name() {
+        systemd-escape --path --suffix=mount "$1"
       }
 
-      ensure_cache_mount() {
-        local mount_path="/mnt/HC_Volume_$${cache_volume_name}"
-        mkdir -p /var/cache/github-actions
-        if [[ -d "$${mount_path}" ]]; then
-          mkdir -p "$${mount_path}/github-actions"
-          ensure_bind_mount "$${mount_path}/github-actions" /var/cache/github-actions
-        fi
-      }
+      enable_generated_unit() {
+        local unit_name="$1"
 
-      ensure_workspace_mount() {
-        if [[ -z "$${workspace_volume_name}" ]]; then
+        if [[ "$${runner_image_family}" == "nixos" ]]; then
+          systemctl enable --runtime --now "$${unit_name}"
           return
         fi
 
-        local mount_path="/mnt/HC_Volume_$${workspace_volume_name}"
-        mkdir -p "$${workspace_mount_path}"
-        if [[ -d "$${mount_path}" ]]; then
-          mkdir -p "$${mount_path}/attic" "$${mount_path}/workspaces"
-          ensure_bind_mount "$${mount_path}" "$${workspace_mount_path}"
+        systemctl enable --now "$${unit_name}"
+      }
+
+      ensure_hcloud_volume_mount() {
+        local volume_id="$1"
+        local mount_path="$2"
+        local device_path="/dev/disk/by-id/scsi-0HC_Volume_$${volume_id}"
+
+        if [[ -z "$${volume_id}" ]]; then
+          return 1
         fi
+
+        mkdir -p "$${mount_path}"
+
+        if mountpoint -q "$${mount_path}"; then
+          return 0
+        fi
+
+        if [[ ! -b "$${device_path}" ]]; then
+          return 1
+        fi
+
+        mount "$${device_path}" "$${mount_path}"
+      }
+
+      write_bind_mount_unit() {
+        local source_path="$1"
+        local target_path="$2"
+        local unit_name
+
+        unit_name=$(mount_unit_name "$${target_path}")
+        mkdir -p "$${source_path}" "$${target_path}"
+
+        mkdir -p "$${systemd_unit_dir}"
+
+        cat >"$${systemd_unit_dir}/$${unit_name}" <<EOF
+[Unit]
+Description=Bind mount $${source_path} to $${target_path}
+After=cloud-final.service local-fs.target
+Requires=local-fs.target
+ConditionPathExists=$${source_path}
+
+[Mount]
+What=$${source_path}
+Where=$${target_path}
+Type=none
+Options=bind
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+        printf '%s\n' "$${unit_name}"
+      }
+
+      select_runner_cache_source_path() {
+        if [[ -n "$${workspace_volume_name}" ]]; then
+          local workspace_cache_root="$${workspace_volume_mount_path}/workspaces"
+          if [[ -d "$${workspace_cache_root}" ]]; then
+            echo "$${workspace_cache_root}"
+            return
+          fi
+        fi
+
+        local cache_mount_path="$${cache_volume_mount_path}"
+        if [[ -d "$${cache_mount_path}" ]]; then
+          echo "$${cache_mount_path}"
+          return
+        fi
+
+        echo ""
+      }
+
+      configure_persistent_mounts() {
+        local workspace_source_path=""
+        local workspace_mount_unit=""
+        local cache_source_root=""
+        local cache_mount_unit=""
+
+        if [[ -n "$${workspace_volume_name}" ]]; then
+          workspace_source_path="$${workspace_volume_mount_path}"
+          if ensure_hcloud_volume_mount "$${workspace_volume_id}" "$${workspace_source_path}"; then
+            mkdir -p "$${workspace_source_path}/attic" "$${workspace_source_path}/workspaces"
+            workspace_mount_unit=$(write_bind_mount_unit "$${workspace_source_path}" "$${workspace_mount_path}")
+          fi
+        fi
+
+        ensure_hcloud_volume_mount "$${cache_volume_id}" "$${cache_volume_mount_path}" || true
+        cache_source_root=$(select_runner_cache_source_path)
+        if [[ -n "$${cache_source_root}" ]]; then
+          mkdir -p "$${cache_source_root}/github-actions"
+          cache_mount_unit=$(write_bind_mount_unit "$${cache_source_root}/github-actions" /var/cache/github-actions)
+        fi
+
+        systemctl daemon-reload
+
+        if [[ -n "$${workspace_mount_unit}" ]]; then
+          enable_generated_unit "$${workspace_mount_unit}"
+        fi
+
+        if [[ -n "$${cache_mount_unit}" ]]; then
+          enable_generated_unit "$${cache_mount_unit}"
+        fi
+      }
+
+      configure_attic_mount_dependency() {
+        if [[ "$${attic_enabled}" != "true" || -z "$${workspace_volume_name}" ]]; then
+          return
+        fi
+
+        local workspace_mount_unit
+        workspace_mount_unit=$(mount_unit_name "$${workspace_mount_path}")
+
+        mkdir -p "$${systemd_unit_dir}/atticd.service.d"
+        cat >"$${systemd_unit_dir}/atticd.service.d/workspace-volume.conf" <<EOF
+[Unit]
+Requires=$${workspace_mount_unit}
+After=$${workspace_mount_unit}
+EOF
+      }
+
+      configure_ssh_ingress_filter() {
+        local cidr
+        local cidr_file
+
+        if [[ "$${github_actions_ssh_ingress_enabled}" != "true" ]]; then
+          return
+        fi
+
+        if [[ "$${runner_image_family}" != "nixos" ]]; then
+          echo "github_actions_ssh_ingress_enabled requires the NixOS runtime path" >&2
+          exit 1
+        fi
+
+        if ! command -v nft >/dev/null 2>&1; then
+          echo "github_actions_ssh_ingress_enabled requires nft" >&2
+          exit 1
+        fi
+
+        cidr_file=$(mktemp)
+        jq -r '.[]' <<<"$${admin_cidrs_json}" >"$${cidr_file}"
+        curl -fsSL https://api.github.com/meta | jq -r '.actions[]' >>"$${cidr_file}"
+
+        nft delete table inet github-runner >/dev/null 2>&1 || true
+        nft add table inet github-runner
+        nft 'add set inet github-runner ssh_allowed_v4 { type ipv4_addr; flags interval; auto-merge; }'
+        nft 'add set inet github-runner ssh_allowed_v6 { type ipv6_addr; flags interval; auto-merge; }'
+
+        while IFS= read -r cidr; do
+          [[ -z "$${cidr}" ]] && continue
+
+          if [[ "$${cidr}" == *:* ]]; then
+            nft add element inet github-runner ssh_allowed_v6 "{ $${cidr} }"
+            continue
+          fi
+
+          nft add element inet github-runner ssh_allowed_v4 "{ $${cidr} }"
+        done <"$${cidr_file}"
+
+        rm -f "$${cidr_file}"
+
+        nft 'add chain inet github-runner input { type filter hook input priority filter; policy accept; }'
+        nft 'add rule inet github-runner input tcp dport 22 ip saddr @ssh_allowed_v4 accept'
+        nft 'add rule inet github-runner input tcp dport 22 ip6 saddr @ssh_allowed_v6 accept'
+        nft 'add rule inet github-runner input tcp dport 22 reject with tcp reset'
       }
 
       mint_registration_token_from_api() {
@@ -139,12 +323,40 @@ write_files:
       }
 
       get_api_token_from_vault() {
+        ensure_vault_runtime_token
+
+        vault kv get -mount="$vault_secret_mount" -field="$vault_secret_key" "$vault_secret_name"
+      }
+
+      ensure_vault_runtime_token() {
         install_vault_if_needed
         export VAULT_ADDR="$vault_addr"
         export VAULT_NAMESPACE="$vault_namespace"
-        export VAULT_TOKEN="$vault_bootstrap_token"
 
-        vault kv get -mount="$vault_secret_mount" -field="$vault_secret_key" "$vault_secret_name"
+        if [[ -n "$vault_runtime_token" ]]; then
+          export VAULT_TOKEN="$vault_runtime_token"
+          if vault token lookup >/dev/null 2>&1; then
+            return
+          fi
+          vault_runtime_token=''
+        fi
+
+        if [[ -n "$vault_auth_mount" && -n "$vault_admin_automation_role_id" && -n "$vault_admin_automation_secret_id" ]]; then
+          if vault_runtime_token=$(vault write -field=token "auth/$vault_auth_mount/login" \
+            role_id="$vault_admin_automation_role_id" \
+            secret_id="$vault_admin_automation_secret_id" 2>/dev/null); then
+            export VAULT_TOKEN="$vault_runtime_token"
+            return
+          fi
+        fi
+
+        if [[ -z "$vault_bootstrap_token" ]]; then
+          echo "Vault bootstrap requires either a static token or AppRole credentials" >&2
+          exit 1
+        fi
+
+        export VAULT_TOKEN="$vault_bootstrap_token"
+        vault token renew >/dev/null 2>&1 || true
       }
 
       get_vault_field() {
@@ -152,10 +364,7 @@ write_files:
         local secret_name="$2"
         local field_name="$3"
 
-        install_vault_if_needed
-        export VAULT_ADDR="$vault_addr"
-        export VAULT_NAMESPACE="$vault_namespace"
-        export VAULT_TOKEN="$vault_bootstrap_token"
+        ensure_vault_runtime_token
 
         vault kv get -mount="$${mount_name}" -field="$${field_name}" "$${secret_name}"
       }
@@ -165,10 +374,7 @@ write_files:
         local secret_name="$2"
         shift 2
 
-        install_vault_if_needed
-        export VAULT_ADDR="$vault_addr"
-        export VAULT_NAMESPACE="$vault_namespace"
-        export VAULT_TOKEN="$vault_bootstrap_token"
+        ensure_vault_runtime_token
 
         if vault kv get -mount="$${mount_name}" "$${secret_name}" >/dev/null 2>&1; then
           vault kv patch -mount="$${mount_name}" "$${secret_name}" "$@"
@@ -192,19 +398,21 @@ write_files:
         attic_secret=$(get_vault_field "$attic_secret_mount" "$attic_secret_name" "$attic_secret_key")
 
         mkdir -p "$${attic_root}" "$${attic_storage_path}" "$${attic_root}/bootstrap"
+        mkdir -p "$${attic_runtime_dir}" "$${systemd_unit_dir}/atticd.service.d"
         touch "$${attic_db_path}"
         chown -R atticd:atticd "$${attic_root}"
         chmod 0750 "$${attic_root}" "$${attic_storage_path}" "$${attic_root}/bootstrap"
         chmod 0640 "$${attic_db_path}"
 
-        cat >/etc/atticd.env <<EOF
+        cat >"$${attic_env_path}" <<EOF
 ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64=$${attic_secret}
 EOF
-        chmod 0600 /etc/atticd.env
+        chown root:atticd "$${attic_env_path}"
+        chmod 0640 "$${attic_env_path}"
 
-        cat >/etc/atticd.toml <<EOF
-listen = "0.0.0.0:$${attic_port}"
-allowed-hosts = ["$${attic_domain}"]
+        cat >"$${attic_toml_path}" <<EOF
+      listen = "127.0.0.1:$${attic_internal_port}"
+      allowed-hosts = ["$${attic_domain}", "127.0.0.1", "localhost"]
 api-endpoint = "$${attic_endpoint}"
 substituter-endpoint = "$${attic_endpoint}"
 
@@ -224,7 +432,333 @@ max-size = 262144
 [compression]
 type = "zstd"
 EOF
-        chmod 0640 /etc/atticd.toml
+  chown atticd:atticd "$${attic_toml_path}"
+  chmod 0640 "$${attic_toml_path}"
+
+  if [[ "$${runner_image_family}" == "nixos" ]]; then
+    cat >"$${systemd_unit_dir}/atticd.service.d/runtime-config.conf" <<EOF
+[Unit]
+ConditionPathExists=
+ConditionPathExists=$${attic_toml_path}
+
+[Service]
+EnvironmentFile=
+EnvironmentFile=-$${attic_env_path}
+ExecStart=
+ExecStart=/run/current-system/sw/bin/atticd --mode monolithic -f $${attic_toml_path}
+WorkingDirectory=/var/lib/atticd
+EOF
+  fi
+      }
+
+      write_attic_proxy_files() {
+        if [[ "$${attic_enabled}" != "true" ]]; then
+          return
+        fi
+
+        local caddy_site_address="$${attic_domain}"
+
+        if [[ "$${attic_endpoint_scheme}" == "http" ]]; then
+          caddy_site_address="http://$${attic_domain}:$${attic_port}"
+        elif [[ "$${attic_port}" != "443" ]]; then
+          caddy_site_address="https://$${attic_domain}:$${attic_port}"
+        fi
+
+        mkdir -p "$${caddy_config_dir}" "$${systemd_unit_dir}/attic-caddy.service.d"
+
+        if [[ "$${attic_origin_tls_enabled}" == "true" ]]; then
+          cat >"$${attic_origin_cert_path}" <<EOF
+$${attic_origin_tls_certificate}
+EOF
+          cat >"$${attic_origin_key_path}" <<EOF
+$${attic_origin_tls_private_key}
+EOF
+          chown root:caddy "$${attic_origin_cert_path}" "$${attic_origin_key_path}"
+          chmod 0640 "$${attic_origin_cert_path}" "$${attic_origin_key_path}"
+
+          cat >"$${caddyfile_path}" <<EOF
+$${caddy_site_address} {
+  tls $${attic_origin_cert_path} $${attic_origin_key_path}
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:$${attic_internal_port}
+}
+EOF
+        else
+          cat >"$${caddyfile_path}" <<EOF
+$${caddy_site_address} {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:$${attic_internal_port}
+}
+EOF
+        fi
+
+        chmod 0644 "$${caddyfile_path}"
+
+        if [[ "$${runner_image_family}" == "nixos" ]]; then
+          cat >"$${systemd_unit_dir}/attic-caddy.service.d/runtime-config.conf" <<EOF
+[Unit]
+ConditionPathExists=
+ConditionPathExists=$${caddyfile_path}
+
+[Service]
+ExecStart=
+ExecStart=/run/current-system/sw/bin/caddy run --config $${caddyfile_path} --adapter caddyfile
+ExecReload=
+ExecReload=/run/current-system/sw/bin/caddy reload --config $${caddyfile_path} --adapter caddyfile
+EOF
+        fi
+      }
+
+      runner_scope_url() {
+        local repo_slug="$1"
+
+        if [[ "$registration_scope" == "repository" ]]; then
+          printf 'https://github.com/%s/%s\n' "$${github_owner}" "$${repo_slug}"
+          return
+        fi
+
+        printf '%s\n' "$${runner_url}"
+      }
+
+      registration_token_for_target() {
+        local repo_slug="$1"
+
+        if [[ "$${registration_mode}" == "vault-token" ]]; then
+          local api_token
+          api_token=$(get_api_token_from_vault)
+
+          if [[ "$${registration_scope}" == "repository" ]]; then
+            mint_registration_token_from_api "$${api_token}" "$${repo_slug}"
+          else
+            mint_registration_token_from_api "$${api_token}" ""
+          fi
+          return
+        fi
+
+        if [[ "$${registration_scope}" == "repository" ]]; then
+          jq -r --arg repo "$${repo_slug}" '.[$repo] // empty' <<<"$${registration_tokens_json}"
+          return
+        fi
+
+        printf '%s' "$${registration_token}"
+      }
+
+      runner_suffix_for_target() {
+        local target="$1"
+
+        if [[ "$${registration_scope}" == "organization" ]]; then
+          printf 'org\n'
+          return
+        fi
+
+        printf '%s\n' "$${target}"
+      }
+
+      safe_runner_suffix() {
+        local raw_suffix="$1"
+        local sanitized_suffix
+        local max_suffix_length
+        local hash_suffix
+        local prefix_length
+
+        sanitized_suffix=$(sed 's/[^a-zA-Z0-9-]/-/g' <<<"$${raw_suffix}")
+        prefix_length=$${#runner_name}
+        max_suffix_length=$$((64 - prefix_length - 1))
+
+        if (( max_suffix_length < 9 )); then
+          echo "runner_name '$${runner_name}' leaves insufficient room for a repository suffix" >&2
+          exit 1
+        fi
+
+        if (( $${#sanitized_suffix} <= max_suffix_length )); then
+          printf '%s\n' "$${sanitized_suffix}"
+          return
+        fi
+
+        hash_suffix=$(printf '%s' "$${sanitized_suffix}" | sha1sum | cut -c1-8)
+        printf '%s-%s\n' "$${sanitized_suffix:0:max_suffix_length-9}" "$${hash_suffix}"
+      }
+
+      ensure_runner_distribution() {
+        local runner_home_target="$1"
+
+        mkdir -p "$${runner_home_target}"
+
+        if [[ "$${runner_image_family}" == "nixos" ]]; then
+          if ! command -v config.sh >/dev/null 2>&1 || ! command -v run.sh >/dev/null 2>&1; then
+            echo "NixOS runner bootstrap requires the github-runner package on the host image" >&2
+            exit 1
+          fi
+        else
+          cd "$${runner_home_target}"
+          curl -fsSLo actions-runner.tar.gz "https://github.com/actions/runner/releases/download/v$${runner_version}/actions-runner-linux-$${runner_arch}-$${runner_version}.tar.gz"
+          tar xzf actions-runner.tar.gz
+          rm -f actions-runner.tar.gz
+        fi
+
+        chown -R actions:actions "$${runner_home_target}"
+      }
+
+      runner_config_command() {
+        local runner_home_target="$1"
+
+        if [[ "$${runner_image_family}" == "nixos" ]]; then
+          command -v config.sh
+        else
+          printf '%s/config.sh\n' "$${runner_home_target}"
+        fi
+      }
+
+      runner_run_command() {
+        local runner_home_target="$1"
+
+        if [[ "$${runner_image_family}" == "nixos" ]]; then
+          command -v run.sh
+        else
+          printf '%s/run.sh\n' "$${runner_home_target}"
+        fi
+      }
+
+      clear_runner_local_state() {
+        local runner_home_target="$1"
+
+        rm -f \
+          "$${runner_home_target}/.runner" \
+          "$${runner_home_target}/.credentials" \
+          "$${runner_home_target}/.credentials_rsaparams" \
+          "$${runner_home_target}/.env"
+      }
+
+      run_runner_service() {
+        local target="$1"
+        local safe_suffix="$2"
+        local runner_home_target="$${runner_home}-$${safe_suffix}"
+        local repo_slug="$${target}"
+        local scope_url
+        local token=""
+        local work_dir="/var/cache/github-actions/work-$${safe_suffix}"
+        local config_cmd
+        local run_cmd
+
+        if [[ "$${runner_ephemeral}" == "true" && "$${registration_mode}" != "vault-token" ]]; then
+          echo "runner_ephemeral requires registration_mode = vault-token" >&2
+          exit 1
+        fi
+
+        ensure_runner_distribution "$${runner_home_target}"
+  config_cmd=$(runner_config_command "$${runner_home_target}")
+  run_cmd=$(runner_run_command "$${runner_home_target}")
+
+        mkdir -p /var/cache/github-actions "$${work_dir}"
+        chown -R actions:actions /var/cache/github-actions "$${work_dir}"
+
+        cd "$${runner_home_target}"
+        scope_url=$(runner_scope_url "$${repo_slug}")
+
+        if [[ "$${runner_ephemeral}" == "true" ]]; then
+          clear_runner_local_state "$${runner_home_target}"
+          token=$(registration_token_for_target "$${repo_slug}")
+        elif [[ ! -f .runner ]]; then
+          token=$(registration_token_for_target "$${repo_slug}")
+        fi
+
+        if [[ -n "$${token}" ]]; then
+          if [[ "$${runner_ephemeral}" == "true" ]]; then
+            sudo -u actions env RUNNER_ROOT="$${runner_home_target}" "$${config_cmd}" \
+              --url "$${scope_url}" \
+              --token "$${token}" \
+              --name "$${runner_name}-$${safe_suffix}" \
+              --runnergroup "$${runner_group}" \
+              --labels "$${runner_labels}" \
+              --work "$${work_dir}" \
+              --disableupdate \
+              --unattended \
+              --replace \
+              --ephemeral
+          else
+            sudo -u actions env RUNNER_ROOT="$${runner_home_target}" "$${config_cmd}" \
+              --url "$${scope_url}" \
+              --token "$${token}" \
+              --name "$${runner_name}-$${safe_suffix}" \
+              --runnergroup "$${runner_group}" \
+              --labels "$${runner_labels}" \
+              --work "$${work_dir}" \
+              --disableupdate \
+              --unattended \
+              --replace
+          fi
+        fi
+
+        sudo -u actions env RUNNER_ROOT="$${runner_home_target}" "$${run_cmd}"
+
+        if [[ "$${runner_ephemeral}" == "true" ]]; then
+          clear_runner_local_state "$${runner_home_target}"
+        fi
+      }
+
+      bootstrap_runner_services() {
+        local cache_mount_unit
+        local target
+        local suffix
+        local safe_suffix
+        local runner_home_target
+        local work_dir
+        local exec_start
+
+        cache_mount_unit=$(mount_unit_name /var/cache/github-actions)
+
+        readarray -t target_repositories < <(tr ',' '\n' <<<"$github_repositories_csv" | sed '/^$/d')
+
+        if [[ "$registration_scope" == "organization" ]]; then
+          target_repositories=("$github_owner")
+        elif [[ $${#target_repositories[@]} -eq 0 ]]; then
+          echo "no target repositories configured for repository scope" >&2
+          exit 1
+        fi
+
+        for target in "$${target_repositories[@]}"; do
+          suffix=$(runner_suffix_for_target "$${target}")
+          safe_suffix=$(safe_runner_suffix "$${suffix}")
+          runner_home_target="$${runner_home}-$${safe_suffix}"
+          work_dir="/var/cache/github-actions/work-$${safe_suffix}"
+
+          if [[ "$${runner_image_family}" == "nixos" ]]; then
+            exec_start="/run/current-system/sw/bin/bash /usr/local/bin/github-runner-bootstrap service \"$${target}\" \"$${safe_suffix}\""
+          else
+            exec_start="/usr/local/bin/github-runner-bootstrap service \"$${target}\" \"$${safe_suffix}\""
+          fi
+
+          mkdir -p "$${runner_home_target}" "$${work_dir}"
+          mkdir -p "$${systemd_unit_dir}"
+          chown -R actions:actions "$${runner_home_target}" "$${work_dir}"
+
+          cat >"$${systemd_unit_dir}/github-runner-$${safe_suffix}.service" <<EOF
+[Unit]
+Description=GitHub Actions runner $${safe_suffix}
+After=network-online.target cloud-final.service $${cache_mount_unit}
+Wants=network-online.target
+Requires=$${cache_mount_unit}
+
+[Service]
+Type=simple
+ExecStart=$${exec_start}
+Restart=always
+RestartSec=10
+KillMode=process
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        done
+
+        systemctl daemon-reload
+
+        for target in "$${target_repositories[@]}"; do
+          suffix=$(runner_suffix_for_target "$${target}")
+          safe_suffix=$(safe_runner_suffix "$${suffix}")
+          enable_generated_unit "github-runner-$${safe_suffix}.service"
+        done
       }
 
       bootstrap_attic() {
@@ -235,7 +769,7 @@ EOF
         local attic_root="$${workspace_mount_path}/attic"
         local bootstrap_dir="$${attic_root}/bootstrap"
         local bootstrap_marker="$${bootstrap_dir}/complete"
-        local local_endpoint="http://127.0.0.1:$${attic_port}/"
+        local local_endpoint="http://127.0.0.1:$${attic_internal_port}/"
         local root_token
         local pull_token
         local ci_token
@@ -246,13 +780,14 @@ EOF
         mkdir -p "$${bootstrap_dir}"
 
         systemctl daemon-reload
-        systemctl enable --now atticd
+        enable_generated_unit atticd
+        enable_generated_unit attic-caddy
 
         if [[ -f "$${bootstrap_marker}" ]]; then
           return
         fi
 
-        root_token=$(atticadm -f /etc/atticd.toml make-token \
+        root_token=$(atticadm -f "$${attic_toml_path}" make-token \
           --sub bootstrap-root \
           --validity 24h \
           --pull '*' \
@@ -280,7 +815,7 @@ EOF
         fi
 
         if [[ -z "$${pull_token}" ]]; then
-          pull_token=$(atticadm -f /etc/atticd.toml make-token \
+          pull_token=$(atticadm -f "$${attic_toml_path}" make-token \
             --sub shared-attic-clients \
             --validity "$${attic_pull_token_validity}" \
             --pull "$${attic_cache_name}")
@@ -293,7 +828,7 @@ EOF
         fi
 
         if [[ -z "$${ci_token}" ]]; then
-          ci_token=$(atticadm -f /etc/atticd.toml make-token \
+          ci_token=$(atticadm -f "$${attic_toml_path}" make-token \
             --sub github-actions-ci \
             --validity "$${attic_ci_token_validity}" \
             --pull "$${attic_cache_name}" \
@@ -349,7 +884,7 @@ EOF
         docker run -d \
           --name crowdsec \
           --restart unless-stopped \
-          --network host \
+          -p "127.0.0.1:$${crowdsec_lapi_port}:8080" \
           -v "$${crowdsec_config_dir}:/etc/crowdsec" \
           -v "$${crowdsec_data_dir}:/var/lib/crowdsec/data" \
           -v /var/log:/var/log:ro \
@@ -372,7 +907,7 @@ EOF
 
         bouncer_key=$(cat "$${bouncer_key_file}")
 
-        docker run -d \
+        if ! docker run -d \
           --name crowdsec-firewall-bouncer \
           --restart unless-stopped \
           --network host \
@@ -380,78 +915,28 @@ EOF
           --cap-add NET_RAW \
           -e CROWDSEC_AGENT_HOST="127.0.0.1:$${crowdsec_lapi_port}" \
           -e CROWDSEC_BOUNCER_API_KEY="$${bouncer_key}" \
-          fbonalair/crowdsec-firewall-bouncer:latest >/dev/null
+          fbonalair/crowdsec-firewall-bouncer:latest >/dev/null; then
+          echo "crowdsec firewall bouncer image unavailable; continuing without firewall bouncer" >&2
+        fi
       }
 
-      useradd --create-home --home-dir "$runner_home" --shell /bin/bash actions || true
+      if [[ "$${1:-}" == "service" ]]; then
+        shift
+        run_runner_service "$1" "$2"
+        exit 0
+      fi
+
+      useradd --create-home --home-dir "$runner_home" --shell "$(command -v bash || echo /bin/bash)" actions || true
       ensure_group_membership
 
-      ensure_cache_mount
-      ensure_workspace_mount
+      configure_ssh_ingress_filter
+      configure_persistent_mounts
+      configure_attic_mount_dependency
       write_attic_files
+      write_attic_proxy_files
       bootstrap_attic
       bootstrap_crowdsec
-
-      readarray -t target_repositories < <(tr ',' '\n' <<<"$github_repositories_csv" | sed '/^$/d')
-
-      if [[ "$registration_scope" == "organization" ]]; then
-        target_repositories=("$github_owner")
-      elif [[ $${#target_repositories[@]} -eq 0 ]]; then
-        echo "no target repositories configured for repository scope" >&2
-        exit 1
-      fi
-
-      if [[ "$registration_mode" == "vault-token" ]]; then
-        api_token=$(get_api_token_from_vault)
-      fi
-
-      for target in "$${target_repositories[@]}"; do
-        repo_slug="$target"
-        scope_url="$runner_url"
-        token="$registration_token"
-        runner_suffix="$target"
-
-        if [[ "$registration_scope" == "repository" ]]; then
-          scope_url="https://github.com/$${github_owner}/$${repo_slug}"
-          if [[ "$registration_mode" == "github-provider" ]]; then
-            token=$(jq -r --arg repo "$repo_slug" '.[$repo] // empty' <<<"$registration_tokens_json")
-          else
-            token=$(mint_registration_token_from_api "$api_token" "$repo_slug")
-          fi
-        elif [[ "$registration_mode" == "vault-token" ]]; then
-          token=$(mint_registration_token_from_api "$api_token" "")
-          runner_suffix="org"
-        fi
-
-        if [[ -z "$token" ]]; then
-          echo "runner registration token is empty for target=$target" >&2
-          exit 1
-        fi
-
-        safe_suffix=$(sed 's/[^a-zA-Z0-9-]/-/g' <<<"$runner_suffix")
-        runner_home_target="$runner_home-$safe_suffix"
-        mkdir -p "$runner_home_target"
-        cd "$runner_home_target"
-
-        curl -fsSLo actions-runner.tar.gz "https://github.com/actions/runner/releases/download/v$${runner_version}/actions-runner-linux-$${runner_arch}-$${runner_version}.tar.gz"
-        tar xzf actions-runner.tar.gz
-        rm -f actions-runner.tar.gz
-
-        chown -R actions:actions "$runner_home_target"
-
-        sudo -u actions ./config.sh \
-          --url "$scope_url" \
-          --token "$token" \
-          --name "$runner_name-$safe_suffix" \
-          --runnergroup "$runner_group" \
-          --labels "$runner_labels" \
-          --work /var/cache/github-actions/work-$safe_suffix \
-          --unattended \
-          --replace
-
-        ./svc.sh install actions
-        ./svc.sh start
-      done
+      bootstrap_runner_services
 
 runcmd:
   - [systemctl, enable, --now, docker]

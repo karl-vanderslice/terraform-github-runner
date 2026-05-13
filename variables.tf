@@ -82,6 +82,12 @@ variable "runner_labels" {
   default     = []
 }
 
+variable "runner_ephemeral" {
+  description = "Whether runner services should self-register as ephemeral GitHub runners and re-register after each job. Requires registration_mode = vault-token."
+  type        = bool
+  default     = false
+}
+
 variable "actions_runner_version" {
   description = "GitHub Actions runner version to install."
   type        = string
@@ -165,7 +171,7 @@ variable "hcloud_image" {
 }
 
 variable "runner_image_family" {
-  description = "Host image family. Use nixos when hcloud_image points at a custom NixOS image or snapshot that includes cloud-init support."
+  description = "Host image family. Use nixos when hcloud_image points at a custom NixOS image that boots a metadata-driven first-boot service instead of relying on cloud-init."
   type        = string
   default     = "ubuntu"
 
@@ -231,8 +237,19 @@ variable "attic_endpoint_scheme" {
   }
 }
 
+variable "attic_tls_mode" {
+  description = "TLS strategy for the Attic reverse proxy when attic_endpoint_scheme is https. letsencrypt uses Caddy-managed ACME on the origin; cloudflare-origin-ca uses a Terraform-managed Cloudflare Origin CA certificate."
+  type        = string
+  default     = "letsencrypt"
+
+  validation {
+    condition     = contains(["letsencrypt", "cloudflare-origin-ca"], var.attic_tls_mode)
+    error_message = "attic_tls_mode must be letsencrypt or cloudflare-origin-ca."
+  }
+}
+
 variable "attic_port" {
-  description = "TCP port used by the Attic API and substituter endpoint on the runner host."
+  description = "Public TCP port used by the Attic reverse proxy on the runner host. Keep 443 when Cloudflare proxies the cache endpoint."
   type        = number
   default     = 8080
 
@@ -242,38 +259,21 @@ variable "attic_port" {
   }
 }
 
-variable "attic_ingress_cidrs" {
-  description = "CIDR blocks allowed to reach the Attic port. Defaults to Cloudflare anycast ranges."
-  type        = list(string)
-  default = [
-    "173.245.48.0/20",
-    "103.21.244.0/22",
-    "103.22.200.0/22",
-    "103.31.4.0/22",
-    "141.101.64.0/18",
-    "108.162.192.0/18",
-    "190.93.240.0/20",
-    "188.114.96.0/20",
-    "197.234.240.0/22",
-    "198.41.128.0/17",
-    "162.158.0.0/15",
-    "104.16.0.0/13",
-    "104.24.0.0/14",
-    "172.64.0.0/13",
-    "131.0.72.0/22",
-    "2400:cb00::/32",
-    "2606:4700::/32",
-    "2803:f800::/32",
-    "2405:b500::/32",
-    "2405:8100::/32",
-    "2a06:98c0::/29",
-    "2c0f:f248::/32",
-  ]
+variable "attic_internal_port" {
+  description = "Loopback port used by atticd behind the reverse proxy on the runner host."
+  type        = number
+  default     = 8080
 
   validation {
-    condition     = !var.attic_enabled || length(var.attic_ingress_cidrs) > 0
-    error_message = "attic_ingress_cidrs must contain at least one CIDR when attic_enabled is true."
+    condition     = var.attic_internal_port >= 1 && var.attic_internal_port <= 65535
+    error_message = "attic_internal_port must be between 1 and 65535."
   }
+}
+
+variable "attic_ingress_cidrs" {
+  description = "CIDR blocks allowed to reach the Attic reverse proxy. Leave empty to derive Cloudflare anycast ranges dynamically."
+  type        = list(string)
+  default     = []
 }
 
 variable "attic_cache_name" {
@@ -315,7 +315,7 @@ variable "crowdsec_enabled" {
 variable "crowdsec_lapi_port" {
   description = "CrowdSec local API port exposed on the runner host loopback interface."
   type        = number
-  default     = 8080
+  default     = 18080
 
   validation {
     condition     = var.crowdsec_lapi_port >= 1 && var.crowdsec_lapi_port <= 65535
@@ -330,9 +330,15 @@ variable "crowdsec_firewall_bouncer_enabled" {
 }
 
 variable "admin_cidrs" {
-  description = "CIDR blocks allowed to SSH to the runner. Leave empty to disable inbound SSH."
+  description = "Additional CIDR blocks allowed to SSH to the runner. Use this for local operator IPs; GitHub Actions ranges are controlled separately."
   type        = list(string)
   default     = []
+}
+
+variable "github_actions_ssh_ingress_enabled" {
+  description = "Whether to enforce GitHub Actions plus local-admin SSH source filtering on the NixOS host. Enable it only on images that include the required packet-filter tooling."
+  type        = bool
+  default     = false
 }
 
 variable "ssh_authorized_keys" {
@@ -390,7 +396,27 @@ variable "attic_vault_secret_key" {
 }
 
 variable "vault_bootstrap_token" {
-  description = "Vault token injected into cloud-init when registration_mode is vault-token. Prefer short TTL token."
+  description = "Vault token injected into first-boot bootstrap when registration_mode is vault-token. Prefer short TTL token."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "vault_auth_mount" {
+  description = "Vault auth mount used for AppRole login when the runner host should avoid a static bootstrap token."
+  type        = string
+  default     = null
+}
+
+variable "vault_admin_automation_role_id" {
+  description = "Vault AppRole role_id used by the runner host to mint a fresh client token at runtime."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "vault_admin_automation_secret_id" {
+  description = "Vault AppRole secret_id used by the runner host to mint a fresh client token at runtime."
   type        = string
   sensitive   = true
   default     = null
