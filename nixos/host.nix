@@ -113,11 +113,13 @@ in {
       database.url = "sqlite:///var/lib/atticd/server.db?mode=rwc";
       listen = "127.0.0.1:${toString generated.attic.localPort}";
       storage = {
-        access_key_id = generated.attic.r2.accessKeyId;
         bucket = generated.attic.r2.bucket;
+        credentials = {
+          access_key_id = generated.attic.r2.accessKeyId;
+          secret_access_key = generated.attic.r2.secretAccessKey;
+        };
         endpoint = "https://${generated.attic.r2.accountId}.r2.cloudflarestorage.com";
         region = "auto";
-        secret_access_key = generated.attic.r2.secretAccessKey;
         type = "s3";
       };
     };
