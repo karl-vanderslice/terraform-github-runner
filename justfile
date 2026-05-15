@@ -14,8 +14,7 @@ format:
   @just enter-nix _format
 
 _format:
-  alejandra .
-  terraform fmt -recursive
+  nix fmt
 
 lint:
   @just enter-nix _lint
@@ -37,39 +36,36 @@ plan:
   @just enter-nix _plan
 
 _plan:
-  terraform init -backend-config=backend.hcl
-  terraform plan
+  chmod +x scripts/with-runner-secrets.sh scripts/terraform-local.sh scripts/nixos-anywhere-install.sh
+  scripts/with-runner-secrets.sh -- scripts/terraform-local.sh plan
 
 apply:
   @just enter-nix _apply
 
 _apply:
-  terraform init -backend-config=backend.hcl
-  terraform apply
+  chmod +x scripts/with-runner-secrets.sh scripts/terraform-local.sh scripts/nixos-anywhere-install.sh
+  scripts/with-runner-secrets.sh -- scripts/terraform-local.sh apply
 
 apply-auto:
   @just enter-nix _apply-auto
 
 _apply-auto:
-  chmod +x scripts/with-runner-secrets.sh
-  scripts/with-runner-secrets.sh -- terraform init -backend-config=backend.hcl
-  scripts/with-runner-secrets.sh -- terraform apply -auto-approve
+  chmod +x scripts/with-runner-secrets.sh scripts/terraform-local.sh scripts/nixos-anywhere-install.sh
+  scripts/with-runner-secrets.sh -- scripts/terraform-local.sh apply -auto-approve
 
 plan-guarded:
   @just enter-nix _plan-guarded
 
 _plan-guarded:
-  chmod +x scripts/with-runner-secrets.sh
-  scripts/with-runner-secrets.sh -- terraform init -backend-config=backend.hcl
-  scripts/with-runner-secrets.sh -- terraform plan
+  chmod +x scripts/with-runner-secrets.sh scripts/terraform-local.sh scripts/nixos-anywhere-install.sh
+  scripts/with-runner-secrets.sh -- scripts/terraform-local.sh plan
 
 destroy-auto:
   @just enter-nix _destroy-auto
 
 _destroy-auto:
-  chmod +x scripts/with-runner-secrets.sh
-  scripts/with-runner-secrets.sh -- terraform init -backend-config=backend.hcl
-  scripts/with-runner-secrets.sh -- terraform destroy -auto-approve
+  chmod +x scripts/with-runner-secrets.sh scripts/terraform-local.sh scripts/nixos-anywhere-install.sh
+  scripts/with-runner-secrets.sh -- scripts/terraform-local.sh destroy -auto-approve
 
 test:
   @just enter-nix _test
@@ -77,20 +73,6 @@ test:
 _test:
   terraform init -backend=false
   terraform validate
-
-build-nixos-image:
-  @just enter-nix _build-nixos-image
-
-_build-nixos-image:
-  nix build .#nixos-runner-hetzner-image
-
-publish-nixos-image *args:
-  @just enter-nix _publish-nixos-image {{args}}
-
-_publish-nixos-image *args:
-  chmod +x scripts/with-runner-secrets.sh scripts/publish-nixos-image.sh
-  nix build .#nixos-runner-hetzner-image
-  scripts/with-runner-secrets.sh -- scripts/publish-nixos-image.sh {{args}}
 
 pre-commit:
   @just enter-nix _pre-commit
@@ -109,9 +91,3 @@ terraform-docs:
 
 _terraform-docs:
   terraform-docs markdown table --output-file README.md --output-mode inject .
-
-hcloud-token-sync-vault:
-  @just enter-nix _hcloud-token-sync-vault
-
-_hcloud-token-sync-vault:
-  scripts/sync-hcloud-token-to-vault.sh

@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.10.0"
 
   backend "remote" {}
 
@@ -24,11 +24,6 @@ terraform {
       version = "~> 1.47"
     }
 
-    vault = {
-      source  = "hashicorp/vault"
-      version = "~> 5.9"
-    }
-
     tls = {
       source  = "hashicorp/tls"
       version = "~> 4.0"
@@ -38,13 +33,13 @@ terraform {
 
 provider "github" {
   owner = coalesce(var.github_owner, "")
+  token = coalesce(var.github_runner_token, "")
+}
+
+provider "cloudflare" {
+  api_token = coalesce(var.cloudflare_api_token, "")
 }
 
 provider "hcloud" {
   token = coalesce(var.hcloud_token, "")
-}
-
-provider "vault" {
-  address   = coalesce(var.vault_addr, "")
-  namespace = var.vault_namespace
 }

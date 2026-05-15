@@ -1,4 +1,11 @@
 .direnv/
+.terraform/
+.terraform-local-run/
+.terraform-remote/
+backend.hcl
+terraform.tfstate
+terraform.tfstate.*
+terraform.tfvars.direnv/
 !.envrc
 .agent-context/
 .terraform/

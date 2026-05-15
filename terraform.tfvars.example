@@ -1,65 +1,32 @@
 runner_enabled      = true
-registration_mode   = "vault-token"
-registration_scope  = "repository"
 github_owner        = "your-github-owner"
 github_repository   = "agent-hub"
-github_repositories = []
-github_runner_group = "Default"
+github_runner_group = ""
 # Leave runner_name unset to default to persistent random_pet naming.
 # runner_name       = "github-runner-quiet-otter"
 runner_labels       = ["shared", "production"]
-runner_ephemeral    = true
 
-# Hetzner-only baseline for this repository.
+# Pulled from Bitwarden and GitHub CLI by scripts/with-runner-secrets.sh
+# hcloud_token         = "<sensitive>"
+# github_runner_token  = "<sensitive>"
+# cloudflare_api_token = "<sensitive>"
 
-# Pulled from Bitwarden and typically injected as TF_VAR_hcloud_token
-# hcloud_token = "<sensitive>"
+# Pulled from terraform-home-network/.env or agent-hub/.env by scripts/with-runner-secrets.sh
+# cloudflare_account_id = "<account-id>"
+# cloudflare_zone_id    = "<zone-id>"
 
 hcloud_location      = "nbg1"
-hcloud_server_type   = "cax21"       # ARM 4 vCPU / 8 GB
-hcloud_image         = "nixos-runner-hetzner-image"  # custom image or snapshot name/ID
-runner_image_family  = "nixos"
-hcloud_volume_size_gb = 100
-workspace_volume_size_gb = 200
-workspace_mount_path     = "/srv/workspaces"
-attic_enabled            = true
+hcloud_server_type   = "cax11"
+hcloud_image         = "ubuntu-24.04"
+
 attic_domain             = "attic.vslice.net"
-attic_endpoint_scheme    = "https"
-attic_tls_mode           = "letsencrypt"
-attic_port               = 443
-attic_internal_port      = 8080
 attic_cache_name         = "github-actions"
-attic_cache_public       = false
-attic_pull_token_validity = "1y"
-attic_ci_token_validity  = "1y"
-# Leave attic_ingress_cidrs empty to derive Cloudflare ranges from the provider.
-# attic_ingress_cidrs      = []
+attic_cache_public       = true
+attic_local_port         = 8080
+# cloudflare_tunnel_name = "github-runner-attic"
+# r2_bucket_name         = "internal-r2-bucket-name"
 
-cloudflare_attic_dns_enabled = true
-cloudflare_attic_proxied     = true
-cloudflare_attic_ttl         = 1
-# cloudflare_api_token        = "<sensitive>"
-# cloudflare_zone_id          = "<zone-id>"
-
-crowdsec_enabled                 = true
-crowdsec_firewall_bouncer_enabled = true
-crowdsec_lapi_port               = 18080
-
-# Optional SSH access for maintenance.
-# admin_cidrs = ["203.0.113.10/32"]
-# github_actions_ssh_ingress_enabled = true  # enable after rolling an image that includes nftables
-# ssh_authorized_keys = ["ssh-ed25519 AAAA..."]
-
-# Vault mode (avoid storing long-lived GitHub token in Terraform state)
-# vault_addr                = "https://vault.vslice.net:8200"
-# vault_namespace           = "admin"
-# vault_bootstrap_token     = "hvs.xxxxx"  # short TTL token preferred
-# vault_runner_secret_mount = "mcp-kv"
-# vault_runner_secret_name  = "github/runner-bootstrap"
-# vault_runner_secret_key   = "GITHUB_TOKEN"
-# attic_vault_secret_mount  = "mcp-kv"
-# attic_vault_secret_name   = "github/runner-attic"
-# attic_vault_secret_key    = "ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64"
-
-# Optional policy bootstrap
-# enable_vault_bootstrap_policy = true
+# Optional SSH access for maintenance; required when the bootstrap host needs to be reachable.
+# admin_cidrs            = ["203.0.113.10/32"]
+# ssh_private_key_path   = "~/.ssh/ezra-device-access"
+# ssh_authorized_keys    = ["ssh-ed25519 AAAA..."]

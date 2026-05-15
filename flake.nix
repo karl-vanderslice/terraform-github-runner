@@ -7,8 +7,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
-    git-hooks-nix.url = "github:cachix/git-hooks.nix";
-    nixos-generators.url = "github:nix-community/nixos-generators";
+    git-hooks-nix = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-anywhere = {
+      url = "github:nix-community/nixos-anywhere";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
@@ -31,16 +37,12 @@
       ];
 
       flake = {
-        nixosConfigurations.seed-publisher = inputs.nixpkgs.lib.nixosSystem {
+        nixosConfigurations.github-runner = inputs.nixpkgs.lib.nixosSystem {
           system = "aarch64-linux";
-          specialArgs = {
-            runner-src = ./.;
-          };
           modules = [
             inputs.disko.nixosModules.disko
-            ./.agent-context/nixos-image-seed/disko.nix
-            ./.agent-context/nixos-image-seed/hardware-configuration.nix
-            ./.agent-context/nixos-image-seed/host.nix
+            ./nixos/disko.nix
+            ./nixos/host.nix
           ];
         };
       };
@@ -77,25 +79,15 @@
           projectRootFile = "flake.nix";
           programs = {
             alejandra.enable = true;
-            deadnix.enable = true;
-            statix.enable = true;
+            biome = {
+              enable = true;
+              includes = ["*.json"];
+            };
+            terraform.enable = true;
           };
         };
 
         checks.preCommit = preCommit;
-
-        packages =
-          if pkgs.stdenv.isLinux
-          then {
-            nixos-runner-hetzner-image = inputs.nixos-generators.nixosGenerate {
-              inherit system;
-              format = "qcow";
-              modules = [
-                ./nixos/runner-image.nix
-              ];
-            };
-          }
-          else {};
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
@@ -103,7 +95,7 @@
             ansible
             attic-client
             attic-server
-            bitwarden-cli
+            biome
             checkov
             deadnix
             gh
@@ -112,13 +104,15 @@
             jq
             just
             markdownlint-cli2
+            inputs.nixos-anywhere.packages.${system}.default
             openssh
             pre-commit
+            rbw
+            rsync
             shellcheck
             statix
             terraform
             terraform-docs
-            vault
             yamllint
             zensical
           ];

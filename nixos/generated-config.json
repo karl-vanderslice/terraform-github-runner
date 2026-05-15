@@ -1,0 +1,31 @@
+{
+	"runner": {
+		"group": "",
+		"labels": ["hetzner", "arm64", "cache"],
+		"name": "github-runner-placeholder",
+		"url": "https://github.com/example/example"
+	},
+	"ssh": {
+		"authorizedKeys": []
+	},
+	"attic": {
+		"cacheName": "github-actions",
+		"cachePriority": 41,
+		"domain": "attic.example.test",
+		"localPort": 8080,
+		"public": true,
+		"publicEndpoint": "https://attic.example.test",
+		"r2": {
+			"accessKeyId": "placeholder",
+			"accountId": "00000000000000000000000000000000",
+			"bucket": "placeholder-bucket",
+			"secretAccessKey": "placeholder-secret"
+		}
+	},
+	"disk": {
+		"device": "/dev/sda"
+	},
+	"cloudflareTunnel": {
+		"id": "00000000-0000-0000-0000-000000000000"
+	}
+}
