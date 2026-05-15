@@ -38,11 +38,19 @@ jobs:
 
           attic login bootstrap-local "$ATTIC_ENDPOINT" "$(cat "$ATTIC_TOKEN_FILE")" --set-default
 
-          out_path="$(nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths nixpkgs#hello | tail -n 1)"
+          out_path="$({
+            nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths --expr '
+              let
+                flake = builtins.getFlake "nixpkgs";
+                pkgs = flake.legacyPackages.${builtins.currentSystem};
+              in
+                pkgs.writeText "attic-smoke-${builtins.getEnv "GITHUB_RUN_ID"}" (builtins.getEnv "GITHUB_SHA")
+            '
+          } | tail -n 1)"
           store_hash="$(basename "$out_path" | cut -d- -f1)"
 
           attic push "$ATTIC_CACHE" "$out_path"
-          curl -fsSI "${ATTIC_ENDPOINT%/}/$ATTIC_CACHE/$store_hash.narinfo" >/dev/null
+          nix --extra-experimental-features 'nix-command flakes' path-info --store "${ATTIC_ENDPOINT%/}/$ATTIC_CACHE" "$out_path" >/dev/null
 
           printf 'store_path=%s\n' "$out_path" >> "$GITHUB_OUTPUT"
           printf 'store_hash=%s\n' "$store_hash" >> "$GITHUB_OUTPUT"
@@ -54,5 +62,5 @@ jobs:
             echo "# Runner Cache Smoke"
             echo
             echo "- Store path: \`${{ steps.push.outputs.store_path }}\`"
-            echo "- Narinfo: \`${ATTIC_ENDPOINT%/}/${ATTIC_CACHE}/${{ steps.push.outputs.store_hash }}.narinfo\`"
+            echo "- Cache store: \`${ATTIC_ENDPOINT%/}/${ATTIC_CACHE}\`"
           } >> "$GITHUB_STEP_SUMMARY"
