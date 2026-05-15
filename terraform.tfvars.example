@@ -12,7 +12,7 @@ runner_ephemeral    = true
 
 # Hetzner-only baseline for this repository.
 
-# Pulled from Bitwarden and typically injected as TF_VAR_hcloud_token
+# Pulled from rbw and typically injected as TF_VAR_hcloud_token
 # hcloud_token = "<sensitive>"
 
 hcloud_location      = "nbg1"

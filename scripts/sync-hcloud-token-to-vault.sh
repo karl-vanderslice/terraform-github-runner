@@ -6,34 +6,27 @@ set +u
 source .env
 set -u
 
-export BW_CLIENTID="${BW_CLIENT_ID:-${BW_CLIENTID:-}}"
-export BW_CLIENTSECRET="${BW_CLIENT_SECRET:-${BW_CLIENTSECRET:-}}"
+export RBW_SERVER_URL="${RBW_SERVER_URL:-}"
+export RBW_EMAIL="${RBW_EMAIL:-}"
+export RBW_CLIENT_ID="${RBW_CLIENT_ID:-}"
+export RBW_CLIENT_SECRET="${RBW_CLIENT_SECRET:-}"
+export RBW_PASSWORD="${RBW_PASSWORD:-}"
 
-bw login --apikey >/dev/null 2>&1 || true
-if [[ -z "${BW_SESSION:-}" ]]; then
-  if [[ -z "${EZRA_BITWARDEN_MASTER_PW:-}" ]]; then
-    echo "EZRA_BITWARDEN_MASTER_PW is not set and BW_SESSION is missing; cannot unlock Bitwarden non-interactively." >&2
-    exit 1
-  fi
-  BW_SESSION="$(bw unlock --raw --passwordenv EZRA_BITWARDEN_MASTER_PW)"
-  export BW_SESSION
-fi
-
-bw sync --session "${BW_SESSION}" >/dev/null
-
-item="$(bw list items --search "Hetzner" --session "$BW_SESSION" | jq -r 'first(.[])')"
-if [[ -z "$item" || "$item" == "null" ]]; then
-  echo "No Bitwarden item found matching Hetzner" >&2
+if [[ -z "${RBW_EMAIL}" || -z "${RBW_CLIENT_ID}" || -z "${RBW_CLIENT_SECRET}" || -z "${RBW_PASSWORD}" ]]; then
+  echo "RBW_* credentials are required in agent-hub .env" >&2
   exit 1
 fi
 
-hcloud_token="$(jq -r '.fields[]? | select(.name=="HCLOUD_TOKEN") | .value' <<<"$item")"
+rbw unlock >/dev/null
+rbw sync >/dev/null
+
+hcloud_token="$(rbw get --field HCLOUD_TOKEN "Hetzner" 2>/dev/null || true)"
 if [[ -z "$hcloud_token" || "$hcloud_token" == "null" ]]; then
-  hcloud_token="$(jq -r '.login.password // empty' <<<"$item")"
+  hcloud_token="$(rbw get "Hetzner" 2>/dev/null || true)"
 fi
 
 if [[ -z "$hcloud_token" ]]; then
-  echo "HCLOUD_TOKEN not found in Bitwarden item fields or login.password" >&2
+  echo "HCLOUD_TOKEN not found in rbw item Hetzner" >&2
   exit 1
 fi
 

@@ -145,9 +145,9 @@ The target cache topology is an Attic service co-located with the runner host at
    temporary NixOS seed host, and publish a fresh Hetzner snapshot before
    setting `runner_image_family = "nixos"`.
 
-## Vault + Bitwarden Flow (Hetzner API Token)
+## Vault + rbw Flow (Hetzner API Token)
 
-1. Store the Hetzner token in Bitwarden field `HCLOUD_TOKEN`.
+1. Store the Hetzner token in self-hosted vault item field `HCLOUD_TOKEN`.
 2. Sync to Vault:
 
 ```bash

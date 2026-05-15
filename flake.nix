@@ -103,7 +103,7 @@
             ansible
             attic-client
             attic-server
-            bitwarden-cli
+            rbw
             checkov
             deadnix
             gh

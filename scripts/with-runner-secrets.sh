@@ -37,28 +37,30 @@ dotenv_get() {
   printf '%s' "${value}"
 }
 
-BW_CLIENT_ID_FILE="$(dotenv_get "${AGENT_HUB_DIR}/.env" BW_CLIENT_ID || true)"
-BW_CLIENTID_FILE="$(dotenv_get "${AGENT_HUB_DIR}/.env" BW_CLIENTID || true)"
-BW_CLIENT_SECRET_FILE="$(dotenv_get "${AGENT_HUB_DIR}/.env" BW_CLIENT_SECRET || true)"
-BW_CLIENTSECRET_FILE="$(dotenv_get "${AGENT_HUB_DIR}/.env" BW_CLIENTSECRET || true)"
-EZRA_BITWARDEN_MASTER_PW="$(dotenv_get "${AGENT_HUB_DIR}/.env" EZRA_BITWARDEN_MASTER_PW || true)"
+RBW_SERVER_URL="$(dotenv_get "${AGENT_HUB_DIR}/.env" RBW_SERVER_URL || true)"
+RBW_EMAIL="$(dotenv_get "${AGENT_HUB_DIR}/.env" RBW_EMAIL || true)"
+RBW_CLIENT_ID="$(dotenv_get "${AGENT_HUB_DIR}/.env" RBW_CLIENT_ID || true)"
+RBW_CLIENT_SECRET="$(dotenv_get "${AGENT_HUB_DIR}/.env" RBW_CLIENT_SECRET || true)"
+RBW_PASSWORD="$(dotenv_get "${AGENT_HUB_DIR}/.env" RBW_PASSWORD || true)"
 
-export BW_CLIENTID="${BW_CLIENT_ID_FILE:-${BW_CLIENTID_FILE:-}}"
-export BW_CLIENTSECRET="${BW_CLIENT_SECRET_FILE:-${BW_CLIENTSECRET_FILE:-}}"
-export EZRA_BITWARDEN_MASTER_PW
+export RBW_SERVER_URL
+export RBW_EMAIL
+export RBW_CLIENT_ID
+export RBW_CLIENT_SECRET
+export RBW_PASSWORD
 export NODE_NO_WARNINGS=1
 
-if [[ -z "${BW_CLIENTID}" || -z "${BW_CLIENTSECRET}" ]]; then
-  echo "BW client credentials are missing in ${AGENT_HUB_DIR}/.env" >&2
+if [[ -z "${RBW_EMAIL}" || -z "${RBW_CLIENT_ID}" || -z "${RBW_CLIENT_SECRET}" ]]; then
+  echo "RBW credentials are missing in ${AGENT_HUB_DIR}/.env" >&2
   exit 1
 fi
 
-if [[ -z "${EZRA_BITWARDEN_MASTER_PW:-}" ]]; then
-  echo "EZRA_BITWARDEN_MASTER_PW is missing in ${AGENT_HUB_DIR}/.env" >&2
+if [[ -z "${RBW_PASSWORD:-}" ]]; then
+  echo "RBW_PASSWORD is missing in ${AGENT_HUB_DIR}/.env" >&2
   exit 1
 fi
 
-bw_run_guarded() {
+rbw_run_guarded() {
   local output err rc out_file err_file combined
   out_file="$(mktemp)"
   err_file="$(mktemp)"
@@ -70,8 +72,8 @@ bw_run_guarded() {
     err="$(cat "${err_file}")"
     combined="${output}"$'\n'"${err}"
     rm -f "${out_file}" "${err_file}"
-    if grep -qi "Input Master Password" <<<"${combined}"; then
-      echo "Bitwarden requested interactive master password input. Refusing interactive flow." >&2
+    if grep -qi "password" <<<"${combined}"; then
+      echo "rbw requested interactive password input. Refusing interactive flow." >&2
       exit 1
     fi
     if [[ -n "${err}" ]]; then
@@ -88,8 +90,8 @@ bw_run_guarded() {
   combined="${output}"$'\n'"${err}"
   rm -f "${out_file}" "${err_file}"
 
-  if grep -qi "Input Master Password" <<<"${combined}"; then
-    echo "Bitwarden requested interactive master password input. Refusing interactive flow." >&2
+  if grep -qi "password" <<<"${combined}"; then
+    echo "rbw requested interactive password input. Refusing interactive flow." >&2
     exit 1
   fi
 
@@ -100,38 +102,28 @@ bw_run_guarded() {
   printf '%s' "${output}"
 }
 
-bw_run_guarded bw login --apikey >/dev/null || true
+rbw_run_guarded rbw unlock >/dev/null
+rbw_run_guarded rbw sync >/dev/null
 
-status_json="$(bw_run_guarded bw status)"
-if ! jq -e . >/dev/null <<<"${status_json}"; then
-  echo "Unexpected non-JSON output from 'bw status'." >&2
-  exit 1
-fi
-status_value="$(jq -r '.status // ""' <<<"${status_json}")"
+rbw_get_field() {
+  local item_name="$1"
+  local field_name="$2"
+  local value
+  value="$(rbw_run_guarded rbw get --field "${field_name}" "${item_name}" 2>/dev/null || true)"
+  if [[ -z "${value}" ]]; then
+    value="$(rbw_run_guarded rbw get "${item_name}" 2>/dev/null || true)"
+  fi
+  printf '%s' "${value}"
+}
 
-if [[ "${status_value}" != "unlocked" ]]; then
-  BW_SESSION="$(bw_run_guarded bw unlock --raw --passwordenv EZRA_BITWARDEN_MASTER_PW)"
-  export BW_SESSION
-fi
-
-if [[ -z "${BW_SESSION:-}" ]]; then
-  echo "BW_SESSION is empty after non-interactive unlock." >&2
-  exit 1
-fi
-
-bw_run_guarded bw sync --session "${BW_SESSION}" >/dev/null
-
-hetzner_item="$(bw_run_guarded bw get item "Hetzner" --session "${BW_SESSION}")"
-vault_item="$(bw_run_guarded bw get item "HCP Vault Ezra" --session "${BW_SESSION}")"
-
-TF_VAR_hcloud_token="$(jq -r '(.fields[]? | select(.name=="HCLOUD_TOKEN") | .value) // .login.password // empty' <<<"${hetzner_item}")"
-TF_VAR_vault_bootstrap_token="$(jq -r '(.fields[]? | select(.name=="VAULT_TOKEN") | .value) // .login.password // empty' <<<"${vault_item}")"
-TF_VAR_vault_auth_mount="$(jq -r '(.fields[]? | select(.name=="VAULT_AUTH_MOUNT") | .value) // empty' <<<"${vault_item}")"
-TF_VAR_vault_admin_automation_role_id="$(jq -r '(.fields[]? | select(.name=="VAULT_ADMIN_AUTOMATION_ROLE_ID") | .value) // empty' <<<"${vault_item}")"
-TF_VAR_vault_admin_automation_secret_id="$(jq -r '(.fields[]? | select(.name=="VAULT_ADMIN_AUTOMATION_SECRET_ID") | .value) // empty' <<<"${vault_item}")"
+TF_VAR_hcloud_token="$(rbw_get_field "Hetzner" "HCLOUD_TOKEN")"
+TF_VAR_vault_bootstrap_token="$(rbw_get_field "HCP Vault Ezra" "VAULT_TOKEN")"
+TF_VAR_vault_auth_mount="$(rbw_get_field "HCP Vault Ezra" "VAULT_AUTH_MOUNT")"
+TF_VAR_vault_admin_automation_role_id="$(rbw_get_field "HCP Vault Ezra" "VAULT_ADMIN_AUTOMATION_ROLE_ID")"
+TF_VAR_vault_admin_automation_secret_id="$(rbw_get_field "HCP Vault Ezra" "VAULT_ADMIN_AUTOMATION_SECRET_ID")"
 
 if [[ -z "${TF_VAR_hcloud_token}" ]]; then
-  echo "HCLOUD_TOKEN missing from Bitwarden item Hetzner." >&2
+  echo "HCLOUD_TOKEN missing from rbw item Hetzner." >&2
   exit 1
 fi
 
