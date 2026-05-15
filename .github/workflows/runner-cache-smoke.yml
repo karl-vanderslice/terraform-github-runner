@@ -39,7 +39,7 @@ jobs:
           attic login bootstrap-local "$ATTIC_ENDPOINT" "$(cat "$ATTIC_TOKEN_FILE")" --set-default
 
           out_path="$({
-            nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths --expr '
+            nix --extra-experimental-features 'nix-command flakes' build --impure --no-link --print-out-paths --expr '
               let
                 flake = builtins.getFlake "nixpkgs";
                 pkgs = flake.legacyPackages.${builtins.currentSystem};
