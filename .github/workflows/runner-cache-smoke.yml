@@ -1,6 +1,9 @@
 name: Runner Cache Smoke
 
 on:
+  push:
+    branches:
+      - task/**
   workflow_dispatch:
 
 permissions:
